@@ -53,20 +53,20 @@ export function Token() {
         </p>
         <div className="flex justify-center gap-4">
           <a
-            href="https://groypfi.io/launchpad"
+            href="https://groypfi.io/swap"
             target="_blank"
             rel="noopener noreferrer"
             className="phoenix-button inline-flex items-center gap-2"
           >
-            Buy on Groypad <ExternalLink size={16} />
+            Buy on GroypFi <ExternalLink size={16} />
           </a>
           <a
-            href="https://dedust.io"
+            href="https://dexscreener.com"
             target="_blank"
             rel="noopener noreferrer"
             className="phoenix-button-outline inline-flex items-center gap-2"
           >
-            Chart on DeDust <ExternalLink size={16} />
+            Chart on Dexscreener <ExternalLink size={16} />
           </a>
         </div>
       </motion.div>
