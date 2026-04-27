@@ -51,7 +51,7 @@ export function Token() {
         <p className="text-xl text-ash-400 max-w-xl mx-auto mb-8">
           The fuel that powers every token rebirth on Phoenix.
         </p>
-        <div className="flex justify-center gap-4">
+        <div className="flex flex-wrap justify-center gap-4">
           <a
             href="https://groypfi.io/swap"
             target="_blank"
@@ -67,6 +67,14 @@ export function Token() {
             className="phoenix-button-outline inline-flex items-center gap-2"
           >
             Chart on Dexscreener <ExternalLink size={16} />
+          </a>
+          <a
+            href="https://dedust.io/pools"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="phoenix-button-outline inline-flex items-center gap-2"
+          >
+            Become a Liquidity Provider <Droplets size={16} />
           </a>
         </div>
       </motion.div>
