@@ -7,8 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Create uploads directory
-RUN mkdir -p uploads
+# Create uploads and data directories
+RUN mkdir -p uploads /data
 
 # SQLite DB will live on a persistent volume mounted at /data
 ENV DB_PATH=/data/phoenix.db
