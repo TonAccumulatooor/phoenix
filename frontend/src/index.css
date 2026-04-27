@@ -186,6 +186,22 @@
   transform: translateY(-1px);
 }
 
+/* --- Wallet button override --- */
+
+.phoenix-wallet-wrap [data-tc-connect-button] {
+  border-radius: 9999px !important;
+  border: 1px solid rgba(255, 143, 0, 0.15) !important;
+  background: rgba(14, 14, 20, 0.6) !important;
+  backdrop-filter: blur(16px) !important;
+  box-shadow: 0 0 16px rgba(255, 69, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.02) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.phoenix-wallet-wrap [data-tc-connect-button]:hover {
+  border-color: rgba(255, 143, 0, 0.35) !important;
+  box-shadow: 0 0 24px rgba(255, 69, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+}
+
 /* --- Input --- */
 
 .phoenix-input {
