@@ -1,0 +1,738 @@
+This guide contains everything trading terminals, bots, and aggregators need to integrate with Groypad — a bonding-curve token launchpad on TON. Groypad uses Uranus-compatible smart contracts, so if you already support Uranus trading, integration is straightforward.
+
+Network: TON Mainnet
+Graduation: 1,050 TON
+Trade Fee: 3%
+
+📍 Contract Addresses
+MemeFactory (deploys new tokens)
+
+
+EQAO4cYqithwdltzmrlal1L5JKLK5Xk76feAJq0VoBC6Fy8T
+Each deployed token gets its own Meme contract (jetton master) and per-user MemeWallet contracts (jetton wallets). Use get_wallet_address on the Meme contract to resolve a user's MemeWallet.
+
+
+🔢 Opcodes
+Operation	Opcode	Destination
+Deploy Meme	0x6ff416dc	MemeFactory
+Buy Tokens	0x742b36d8	Meme (jetton master)
+Sell / Burn	0x595f07bc	MemeWallet (user jetton wallet)
+Transfer Tokens	0x0f8a7ea5	MemeWallet
+Request Wallet Address	0x2c76b973	Meme
+
+📖 Get Methods (On-Chain Reads)
+get_meme_data
+Returns the full bonding curve state. Call on the Meme contract.
+
+
+// Stack layout (13 items):
+[0]  initialized    : bool
+[1]  migrated       : bool
+[2]  controller     : address
+[3]  creator        : address
+[4]  creatorFee     : coins     (accumulated creator fee in nanoTON)
+[5]  seed           : uint256
+[6]  isGraduated    : bool
+[7]  alpha          : uint128   (bonding curve intercept, nano)
+[8]  beta           : uint128   (bonding curve slope, nano)
+[9]  onSellSupply   : coins     (supply threshold for selling)
+[10] tradeFeeBPS    : uint16    (trading fee in basis points, e.g. 100 = 1%)
+[11] raisedFunds    : coins     (total TON raised, nanoTON)
+[12] currentSupply  : coins     (current token supply, nano-tokens)
+get_jetton_data
+Standard TEP-74 jetton master getter. Returns total supply, mintable flag, admin, content cell, wallet code.
+
+get_wallet_address(owner_address)
+Returns the user's MemeWallet address for this token. Required before selling.
+
+
+// TonCenter v3
+POST https://toncenter.com/api/v3/runGetMethod
+{
+  "address": "<MEME_ADDRESS>",
+  "method": "get_wallet_address",
+  "stack": [
+    { "type": "slice", "value": "<OWNER_ADDRESS_IN_CELL_BASE64>" }
+  ]
+}
+get_wallet_data
+Call on a MemeWallet to get the user's token balance.
+
+
+// Returns: [balance: coins, owner: address, meme: address, wallet_code: cell]
+
+📈 Bonding Curve Math
+Groypad uses a linear bonding curve: price(s) = α + β × s where s is the current supply.
+
+Buy Quote (TON → tokens)
+Solve for dx in the integral equation. Newton's method recommended for bigint precision.
+
+
+const PRECISION = BigInt(1e9);
+
+// Integral of linear curve from s1 to s2
+function integrateCurve(s1: bigint, s2: bigint, alpha: bigint, beta: bigint): bigint {
+  const dx = s2 - s1;
+  if (dx <= 0n) return 0n;
+  const term1 = (alpha * dx) / PRECISION;
+  const term2 = (beta * dx * (s1 + s2)) / (2n * PRECISION * PRECISION);
+  return term1 + term2;
+}
+
+// How many tokens for X nanoTON?
+function buyQuote(amountTon: bigint, currentSupply: bigint, alpha: bigint, beta: bigint): bigint {
+  const avgPrice = alpha + (beta * currentSupply) / PRECISION;
+  if (avgPrice <= 0n) return 0n;
+  let tokensOut = (amountTon * PRECISION) / avgPrice;
+
+  // Newton's iterations
+  for (let i = 0; i < 10; i++) {
+    const cost = integrateCurve(currentSupply, currentSupply + tokensOut, alpha, beta);
+    const diff = cost - amountTon;
+    if (diff === 0n) break;
+    const priceAtEnd = alpha + (beta * (currentSupply + tokensOut)) / PRECISION;
+    if (priceAtEnd <= 0n) break;
+    const adj = (diff * PRECISION) / priceAtEnd;
+    tokensOut -= adj;
+    if (tokensOut <= 0n) return 0n;
+    if (adj > -2n && adj < 2n) break;
+  }
+  return tokensOut;
+}
+Sell Quote (tokens → TON)
+
+function sellQuote(
+  tokenAmount: bigint,
+  currentSupply: bigint,
+  alpha: bigint,
+  beta: bigint,
+  tradeFeeBPS: number = 100 // 1%
+): bigint {
+  if (tokenAmount <= 0n || tokenAmount > currentSupply) return 0n;
+  const newSupply = currentSupply - tokenAmount;
+  const rawTon = integrateCurve(newSupply, currentSupply, alpha, beta);
+  // Contract deducts trading fee
+  return (rawTon * (10000n - BigInt(tradeFeeBPS))) / 10000n;
+}
+
+🟢 Buy Tokens
+Send TON to the Meme contract address (jetton master) with the buy opcode. The contract handles commission internally.
+
+Message Body
+
+// Buy message (Uranus-compatible):
+// op:uint32     = 0x742b36d8
+// query_id:uint64 = 0
+// min_tokens_out:coins (0 = no minimum)
+
+beginCell()
+  .storeUint(0x742b36d8, 32)  // Uranus buy opcode
+  .storeUint(0, 64)            // query_id
+  .storeCoins(minTokensOut)    // min_tokens_out (slippage protection)
+  .endCell()
+Transaction Parameters
+
+{
+  to: "<MEME_ADDRESS>",       // Jetton master contract
+  value: amountTON + 0.3 TON, // Buy amount + gas
+  body: buyMessageCell         // Serialized buy message
+}
+⚠️ Gas: Always attach at least 0.3 TON for gas on top of the buy amount. Insufficient gas causes bounced transactions.
+
+
+🔴 Sell Tokens
+Selling uses the jetton burn mechanism. The message is sent to the user's MemeWallet (not the Meme contract).
+
+Step 1: Resolve user's MemeWallet via get_wallet_address(owner) on the Meme contract.
+
+Step 2: Send burn message to that MemeWallet address.
+
+Message Body
+
+// Sell/Burn message (TL-B):
+// op:uint32 = 0x595f07bc
+// query_id:uint64 = 0
+// amount:coins             (tokens to sell)
+// response_destination:address (owner wallet — receives TON proceeds)
+// custom_payload:bit = 0
+
+beginCell()
+  .storeUint(0x595f07bc, 32)        // burn opcode
+  .storeUint(0, 64)                  // query_id
+  .storeCoins(tokenAmount)           // amount to sell
+  .storeAddress(ownerAddress)        // receives TON
+  .storeBit(false)                   // no custom payload
+  .endCell()
+Transaction Parameters
+
+{
+  to: "<MEME_WALLET_ADDRESS>",  // User's jetton wallet (NOT the meme master)
+  value: 0.3 TON,               // Gas only — no extra TON needed
+  body: sellMessageCell
+}
+⚠️ Important: Cap sell amount to the actual on-chain balance (from get_wallet_data). Rounding errors cause exit_code 27 bounces.
+
+
+🎓 Graduation
+When a token raises 1,050 TON, it graduates. The contract sets isGraduated = true and liquidity migrates to a DEX. After migration, isMigrated = true — the bonding curve is closed and trading happens on the DEX.
+
+
+// Progress calculation
+const GRADUATION_TARGET = 1050n * 1_000_000_000n; // 1050 TON in nanoTON
+const progress = Math.min(100,
+  Number((raisedFunds * 10000n) / GRADUATION_TARGET) / 100
+);
+
+// Status determination
+if (isMigrated) status = 'graduated';      // Trade on DEX
+else if (isGraduated) status = 'graduating'; // Liquidity migrating
+else status = 'live';                        // Trade on bonding curve
+📝 Groypad Memo: All tokens deployed on Groypad have a "Groypad" memo attached to the Deployer Wallet transaction. Since Groypad and Uranus share the same MemeFactory contract (EQAO4cYq...), this memo is the easiest way to distinguish Groypad deployments from Uranus deployments when scanning on-chain.
+
+
+📋 Metadata (TEP-64)
+Token metadata follows TEP-64. Groypad uses off-chain format (0x01 prefix + URL).
+
+Metadata JSON schema
+
+{
+  "name": "MyToken",
+  "symbol": "MTK",
+  "description": "A token on Groypad",
+  "image": "https://...",       // Token logo URL
+  "decimals": "9",
+  "social": [
+    "https://t.me/mychannel",
+    "https://x.com/mytoken",
+    "https://mytoken.com",
+    "https://github.com/mytoken"
+  ]
+}
+To resolve metadata: call get_jetton_data, read the content cell (stack[3]), strip the 0x01 prefix to get the URL, then fetch the JSON. Alternatively, use the TonAPI endpoint GET /v2/jettons/<address> which does this automatically.
+
+
+🌐 REST API (Token List)
+Query the Groypad token list via our public API proxy. No API key required.
+
+List all tokens
+
+// Public API — no key required
+GET https://groypfi.io/api/launchpad-screener
+
+// Response fields per token:
+// meme_address, ticker, name, description, image_url,
+// progress, market_cap, holders, tx_count, volume_24h,
+// is_graduated, is_migrated,
+// telegram, twitter, website, created_at
+Identify Groypad tokens on-chain
+
+// Method 1 (Recommended): Check the deploy transaction memo
+// Groypad tokens have "Groypad" memo attached to the Deployer Wallet TX.
+// This is the easiest way to distinguish from Uranus (same MemeFactory).
+
+// Method 2: Check admin_address of the jetton master
+// Groypad tokens have admin = MemeFactory:
+// EQAO4cYqithwdltzmrlal1L5JKLK5Xk76feAJq0VoBC6Fy8T
+
+// Method 3: Check if get_meme_data returns valid data (exit_code 0)
+// Non-Groypad tokens will fail this call
+
+🛠️ Full Integration Examples
+TypeScript (@ton/ton)
+Complete buy flow
+
+import { TonClient, Address, beginCell, toNano } from '@ton/ton';
+
+const client = new TonClient({ endpoint: 'https://toncenter.com/api/v2/jsonRPC' });
+
+async function buyGroypadToken(
+  memeAddress: string,
+  amountTon: number,
+  slippagePct: number = 5
+) {
+  const meme = Address.parse(memeAddress);
+  
+  // 1. Read bonding curve state
+  const result = await client.runMethod(meme, 'get_meme_data');
+  const stack = result.stack;
+  stack.skip(7); // skip to alpha
+  const alpha = stack.readBigNumber();
+  const beta = stack.readBigNumber();
+  stack.skip(1); // onSellSupply
+  const tradeFeeBPS = stack.readNumber();
+  stack.skip(1); // raisedFunds
+  const currentSupply = stack.readBigNumber();
+
+  // 2. Calculate expected tokens out
+  const amountNano = toNano(amountTon.toString());
+  const tokensOut = buyQuote(amountNano, currentSupply, alpha, beta);
+  const minOut = (tokensOut * BigInt(100 - slippagePct)) / 100n;
+
+  // 3. Build buy message
+  const body = beginCell()
+    .storeUint(0x742b36d8, 32)
+    .storeUint(0, 64)
+    .storeCoins(minOut)
+    .endCell();
+
+  // 4. Send transaction (value = buy amount + 0.3 TON gas)
+  // Use TonConnect, ton-core WalletContractV4, or your preferred method
+  return {
+    to: meme.toString(),
+    value: (amountNano + toNano('0.3')).toString(),
+    body,
+  };
+}
+Complete sell flow
+
+async function sellGroypadToken(
+  memeAddress: string,
+  ownerAddress: string,
+  tokenAmount: bigint
+) {
+  const meme = Address.parse(memeAddress);
+  const owner = Address.parse(ownerAddress);
+
+  // 1. Get user's MemeWallet address
+  const walletResult = await client.runMethod(meme, 'get_wallet_address', [
+    { type: 'slice', cell: beginCell().storeAddress(owner).endCell() },
+  ]);
+  const memeWallet = walletResult.stack.readAddress();
+
+  // 2. Verify actual balance (prevent exit_code 27)
+  const balResult = await client.runMethod(memeWallet, 'get_wallet_data');
+  const actualBalance = balResult.stack.readBigNumber();
+  const sellAmount = tokenAmount > actualBalance ? actualBalance : tokenAmount;
+
+  // 3. Build burn/sell message
+  const body = beginCell()
+    .storeUint(0x595f07bc, 32)
+    .storeUint(0, 64)
+    .storeCoins(sellAmount)
+    .storeAddress(owner)
+    .storeBit(false)
+    .endCell();
+
+  // 4. Send to MemeWallet (not Meme contract!)
+  return {
+    to: memeWallet.toString(),
+    value: toNano('0.3').toString(),
+    body,
+  };
+}
+Python (tonsdk / toncenter)
+Bonding curve math
+
+PRECISION = 10**9
+
+def integrate_curve(s1: int, s2: int, alpha: int, beta: int) -> int:
+    dx = s2 - s1
+    if dx <= 0:
+        return 0
+    term1 = (alpha * dx) // PRECISION
+    term2 = (beta * dx * (s1 + s2)) // (2 * PRECISION * PRECISION)
+    return term1 + term2
+
+def buy_quote(amount_ton: int, supply: int, alpha: int, beta: int) -> int:
+    avg_price = alpha + (beta * supply) // PRECISION
+    if avg_price <= 0:
+        return 0
+    tokens = (amount_ton * PRECISION) // avg_price
+    for _ in range(10):
+        cost = integrate_curve(supply, supply + tokens, alpha, beta)
+        diff = cost - amount_ton
+        if diff == 0:
+            break
+        p_end = alpha + (beta * (supply + tokens)) // PRECISION
+        if p_end <= 0:
+            break
+        adj = (diff * PRECISION) // p_end
+        tokens -= adj
+        if tokens <= 0:
+            return 0
+        if -2 < adj < 2:
+            break
+    return tokens
+
+def sell_quote(token_amount: int, supply: int, alpha: int, beta: int, fee_bps: int = 100) -> int:
+    if token_amount <= 0 or token_amount > supply:
+        return 0
+    raw = integrate_curve(supply - token_amount, supply, alpha, beta)
+    return (raw * (10000 - fee_bps)) // 10000
+Read bonding curve state (TonCenter v3)
+
+import requests
+
+TONCENTER = "https://toncenter.com/api/v3"
+
+def get_meme_data(meme_address: str) -> dict:
+    resp = requests.post(f"{TONCENTER}/runGetMethod", json={
+        "address": meme_address,
+        "method": "get_meme_data",
+        "stack": []
+    })
+    stack = resp.json()["stack"]
+    return {
+        "initialized":   stack[0]["value"] != "0",
+        "migrated":      stack[1]["value"] != "0",
+        "is_graduated":  stack[6]["value"] != "0",
+        "alpha":         int(stack[7]["value"], 16),
+        "beta":          int(stack[8]["value"], 16),
+        "trade_fee_bps": int(stack[10]["value"], 16),
+        "raised_funds":  int(stack[11]["value"], 16),
+        "current_supply":int(stack[12]["value"], 16),
+    }
+Build buy message
+
+from tonsdk.boc import Cell, Builder
+
+def build_buy_body(min_tokens_out: int) -> Cell:
+    b = Builder()
+    b.store_uint(0x742b36d8, 32)   # buy opcode
+    b.store_uint(0, 64)             # query_id
+    b.store_coins(min_tokens_out)   # slippage protection
+    return b.end_cell()
+
+# Transaction: send to Meme contract address
+# value = buy_amount_nanoton + 300_000_000  (0.3 TON gas)
+Build sell message
+
+from tonsdk.boc import Cell, Builder
+from tonsdk.utils import Address
+
+def build_sell_body(token_amount: int, owner_address: str) -> Cell:
+    b = Builder()
+    b.store_uint(0x595f07bc, 32)          # burn opcode
+    b.store_uint(0, 64)                    # query_id
+    b.store_coins(token_amount)            # tokens to sell
+    b.store_address(Address(owner_address))# receives TON proceeds
+    b.store_bit(False)                     # no custom payload
+    return b.end_cell()
+
+# Step 1: Resolve MemeWallet via get_wallet_address(owner) on Meme contract
+# Step 2: Send this message to the MemeWallet address
+# value = 300_000_000  (0.3 TON gas only)
+Full buy example
+
+def prepare_buy(meme_address: str, ton_amount: float, slippage_pct: int = 5):
+    """Returns dict with to, value, body for the buy transaction."""
+    data = get_meme_data(meme_address)
+    if data["migrated"] or data["is_graduated"]:
+        raise Exception("Token already graduated — trade on DEX")
+
+    amount_nano = int(ton_amount * 1e9)
+    tokens = buy_quote(amount_nano, data["current_supply"], data["alpha"], data["beta"])
+    min_out = (tokens * (100 - slippage_pct)) // 100
+
+    body = build_buy_body(min_out)
+    return {
+        "to": meme_address,
+        "value": amount_nano + 300_000_000,  # + 0.3 TON gas
+        "body": body.to_boc(),
+    }
+
+⚡ Teleton Plugin
+Teleton is a modular AI agent for Telegram & TON with built-in wallet, MCP support, and a plugin SDK. The GroypFi Groypad plugin lets AI agents deploy, trade, and manage tokens on the bonding curve.
+
+Option 1 — WebUI Marketplace: Run teleton start --webui, open Plugins → Marketplace, and install GroypFi Groypad with one click.
+
+Option 2 — Manual install:
+
+
+# Clone and copy the plugin
+git clone https://github.com/TONresistor/teleton-plugins.git
+cp -r teleton-plugins/plugins/groypfi-groypad ~/.teleton/plugins/
+
+# Optional: higher TonCenter rate limits
+/plugin set groypfi-groypad TONCENTER_API_KEY <your-key>
+Requirements: Teleton SDK v1.0.0+ with TON wallet configured.
+
+Format: ESM module using the tools(sdk) pattern.
+
+📝 Groypad vs Uranus: Both launchpads share the same MemeFactory contract (EQAO4cYq...). Groypad deployments are identifiable by the "Groypad" memo attached to the Deployer Wallet transaction. Use this memo to filter Groypad tokens when scanning on-chain.
+
+groypfi-groypad/index.js — Plugin (v1.3.0)
+
+// plugins/groypfi-groypad/index.js — Teleton SDK plugin for Groypad (Bonding Curve Launchpad on TON)
+// Repository: https://github.com/TONresistor/teleton-plugins
+//
+// MemeFactory: EQAO4cYqithwdltzmrlal1L5JKLK5Xk76feAJq0VoBC6Fy8T
+// Buy opcode:    0x742b36d8 → Meme (jetton master)
+// Sell opcode:   0x595f07bc → MemeWallet (user jetton wallet)
+//
+// Docs: https://groypfi.io/docs/groypad
+
+import { createRequire } from "node:module";
+import { realpathSync } from "node:fs";
+
+const _require = createRequire(realpathSync(process.argv[1]));
+const { beginCell, toNano, Address } = _require("@ton/core");
+
+const MEME_FACTORY = "EQAO4cYqithwdltzmrlal1L5JKLK5Xk76feAJq0VoBC6Fy8T";
+const API_BASE = "https://groypfi.io/api";
+const PRECISION = BigInt(1e9);
+
+// ── Bonding curve math ──
+
+function integrateCurve(s1, s2, alpha, beta) {
+  const dx = s2 - s1;
+  if (dx <= 0n) return 0n;
+  const term1 = (alpha * dx) / PRECISION;
+  const term2 = (beta * dx * (s1 + s2)) / (2n * PRECISION * PRECISION);
+  return term1 + term2;
+}
+
+function buyQuote(amountTon, currentSupply, alpha, beta) {
+  const avgPrice = alpha + (beta * currentSupply) / PRECISION;
+  if (avgPrice <= 0n) return 0n;
+  let tokensOut = (amountTon * PRECISION) / avgPrice;
+  for (let i = 0; i < 10; i++) {
+    const cost = integrateCurve(currentSupply, currentSupply + tokensOut, alpha, beta);
+    const diff = cost - amountTon;
+    if (diff === 0n) break;
+    const priceAtEnd = alpha + (beta * (currentSupply + tokensOut)) / PRECISION;
+    if (priceAtEnd <= 0n) break;
+    const adj = (diff * PRECISION) / priceAtEnd;
+    tokensOut -= adj;
+    if (tokensOut <= 0n) return 0n;
+    if (adj > -2n && adj < 2n) break;
+  }
+  return tokensOut;
+}
+
+function sellQuote(tokenAmount, currentSupply, alpha, beta, tradeFeeBPS = 100) {
+  if (tokenAmount <= 0n || tokenAmount > currentSupply) return 0n;
+  const newSupply = currentSupply - tokenAmount;
+  const rawTon = integrateCurve(newSupply, currentSupply, alpha, beta);
+  return (rawTon * (10000n - BigInt(tradeFeeBPS))) / 10000n;
+}
+
+// ── TonCenter helpers ──
+
+async function runGetMethod(address, method, stack, apiKey) {
+  const url = `https://toncenter.com/api/v3/runGetMethod`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { "X-API-Key": apiKey } : {}),
+    },
+    body: JSON.stringify({ address, method, stack }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`runGetMethod failed: ${res.status}`);
+  return res.json();
+}
+
+// ── Manifest ──
+
+export const manifest = {
+  name: "groypfi-groypad",
+  version: "1.3.0",
+  sdkVersion: ">=1.0.0",
+  description: "Trade and manage tokens on Groypad — a bonding-curve memecoin launchpad on TON.",
+  defaultConfig: {},
+};
+
+// ── Tools (SDK function pattern) ──
+
+export const tools = (sdk) => [
+  // ── Deploy Token ──
+  {
+    name: "groypad_deploy",
+    description: "Guides users to deploy a new memecoin via the GroypFi web app at groypfi.io/launchpad.",
+    parameters: { type: "object", properties: {
+      name: { type: "string", description: "Token name" },
+      ticker: { type: "string", description: "Token ticker/symbol" },
+    }, required: [] },
+    scope: "dm-only",
+    category: "action",
+    async execute(params) {
+      return { success: true, data: {
+        message: "To deploy on Groypad, use the GroypFi web app for a guided experience.",
+        deployUrl: "https://groypfi.io/launchpad",
+        instructions: [
+          "1. Visit https://groypfi.io/launchpad",
+          "2. Connect your TON wallet",
+          "3. Click 'Create Token' and fill in details",
+          "4. Upload logo, add socials, set initial buy (min 10 TON)",
+          "5. Confirm and deploy",
+        ],
+      }};
+    },
+  },
+
+  // ── List Tokens ──
+  {
+    name: "groypad_list_tokens",
+    description: "List active Groypad tokens with market cap, progress, volume, and holders.",
+    parameters: { type: "object", properties: {} },
+    category: "data-bearing",
+    async execute() {
+      const res = await fetch(`${API_BASE}/launchpad-screener`,
+        { signal: AbortSignal.timeout(15000) });
+      const tokens = await res.json();
+      return { success: true, data: tokens.map(t => ({
+        ticker: t.ticker, name: t.name, address: t.meme_address,
+        marketCap: (t.market_cap?.toFixed(2) ?? "0") + " TON",
+        progress: (t.progress ?? 0).toFixed(1) + "%",
+        volume24h: (t.volume_24h?.toFixed(2) ?? "0") + " TON", holders: t.holders ?? 0,
+      })) };
+    },
+  },
+
+  // ── Token Info (on-chain) ──
+  {
+    name: "groypad_token_info",
+    description: "Get on-chain bonding curve data: price, progress, supply, raised funds.",
+    parameters: { type: "object", properties: {
+      address: { type: "string", description: "Meme contract address (EQ... or UQ...)" },
+    }, required: ["address"] },
+    category: "data-bearing",
+    async execute(params) {
+      const toncenterKey = sdk.secrets.get("TONCENTER_API_KEY");
+      const result = await runGetMethod(params.address, "get_meme_data", [], toncenterKey);
+      const stack = result.stack;
+      const alpha = BigInt(stack[7].value ?? stack[7]);
+      const beta = BigInt(stack[8].value ?? stack[8]);
+      const raisedFunds = BigInt(stack[11].value ?? stack[11]);
+      const currentSupply = BigInt(stack[12].value ?? stack[12]);
+      const price = Number(alpha + (beta * currentSupply) / PRECISION) / 1e9;
+      const progress = Math.min(100, Number((raisedFunds * 10000n) / (1050n * PRECISION)) / 100);
+      return { success: true, data: { price, progress: progress.toFixed(1) + "%",
+        raisedFunds: (Number(raisedFunds) / 1e9).toFixed(4) + " TON",
+        currentSupply: currentSupply.toString(),
+        isGraduated: (stack[6].value ?? stack[6]) !== "0" } };
+    },
+  },
+
+  // ── Get Quote ──
+  {
+    name: "groypad_get_quote",
+    description: "Preview buy/sell quote without executing a trade.",
+    parameters: { type: "object", properties: {
+      address: { type: "string", description: "Meme contract address" },
+      side: { type: "string", description: "'buy' or 'sell'" },
+      amount: { type: "number", description: "For buy: TON to spend. For sell: token amount" },
+    }, required: ["address", "side", "amount"] },
+    category: "data-bearing",
+    async execute(params) {
+      const { address, side, amount } = params;
+      const toncenterKey = sdk.secrets.get("TONCENTER_API_KEY");
+      const result = await runGetMethod(address, "get_meme_data", [], toncenterKey);
+      const stack = result.stack;
+      const alpha = BigInt(stack[7].value ?? stack[7]);
+      const beta = BigInt(stack[8].value ?? stack[8]);
+      const tradeFeeBPS = Number(stack[10].value ?? stack[10]);
+      const supply = BigInt(stack[12].value ?? stack[12]);
+      const currentPrice = Number(alpha + (beta * supply) / PRECISION) / 1e9;
+
+      if (side === "buy") {
+        const amountNano = BigInt(Math.floor(amount * 1e9));
+        const tokensOut = buyQuote(amountNano, supply, alpha, beta);
+        const priceAfter = Number(alpha + (beta * (supply + tokensOut)) / PRECISION) / 1e9;
+        const priceImpact = currentPrice > 0 ? (((priceAfter - currentPrice) / currentPrice) * 100).toFixed(2) : "0";
+        return { success: true, data: { side: "buy", inputTon: amount,
+          estimatedTokensOut: (Number(tokensOut) / 1e9).toFixed(4),
+          currentPrice: currentPrice.toFixed(9) + " TON", priceAfter: priceAfter.toFixed(9) + " TON",
+          priceImpact: priceImpact + "%" } };
+      } else {
+        const tokenNano = BigInt(Math.floor(amount * 1e9));
+        const tonOut = sellQuote(tokenNano, supply, alpha, beta, tradeFeeBPS);
+        return { success: true, data: { side: "sell", inputTokens: amount,
+          estimatedTonOut: (Number(tonOut) / 1e9).toFixed(4) + " TON",
+          tradeFee: tradeFeeBPS / 100 + "%" } };
+      }
+    },
+  },
+
+  // ── Buy ──
+  {
+    name: "groypad_buy",
+    description: "Buy tokens on the Groypad bonding curve.",
+    parameters: { type: "object", properties: {
+      address: { type: "string", description: "Meme contract address" },
+      amount_ton: { type: "number", description: "TON to spend" },
+      slippage: { type: "number", description: "Slippage % (default 5)" },
+    }, required: ["address", "amount_ton"] },
+    scope: "dm-only",
+    category: "action",
+    async execute(params) {
+      const { address, amount_ton, slippage = 5 } = params;
+      const toncenterKey = sdk.secrets.get("TONCENTER_API_KEY");
+      const result = await runGetMethod(address, "get_meme_data", [], toncenterKey);
+      const stack = result.stack;
+      const alpha = BigInt(stack[7].value ?? stack[7]);
+      const beta = BigInt(stack[8].value ?? stack[8]);
+      const supply = BigInt(stack[12].value ?? stack[12]);
+      const amountNano = BigInt(Math.floor(amount_ton * 1e9));
+      const tokensOut = buyQuote(amountNano, supply, alpha, beta);
+      const minOut = (tokensOut * BigInt(100 - slippage)) / 100n;
+
+      const body = beginCell()
+        .storeUint(0x742b36d8, 32).storeUint(0, 64).storeCoins(minOut).endCell();
+      const txResult = await sdk.ton.sendTON(address, amount_ton + 0.3, body.toBoc().toString("base64"));
+      return { success: true, data: { txRef: txResult?.txRef, estimatedTokens: (Number(tokensOut) / 1e9).toFixed(2) } };
+    },
+  },
+
+  // ── Sell ──
+  {
+    name: "groypad_sell",
+    description: "Sell tokens back to the bonding curve.",
+    parameters: { type: "object", properties: {
+      address: { type: "string", description: "Meme contract address (jetton master)" },
+      amount: { type: "string", description: "Nano-token amount as string, or 'all' for full balance" },
+    }, required: ["address", "amount"] },
+    scope: "dm-only",
+    category: "action",
+    async execute(params) {
+      const { address, amount } = params;
+      const toncenterKey = sdk.secrets.get("TONCENTER_API_KEY");
+      const walletAddr = sdk.ton.getAddress();
+      if (!walletAddr) return { success: false, error: "Wallet not initialized" };
+
+      const walletResult = await runGetMethod(address, "get_wallet_address",
+        [{ type: "slice", value: walletAddr }], toncenterKey);
+      const memeWallet = walletResult.stack[0].value ?? walletResult.stack[0];
+
+      const balResult = await runGetMethod(memeWallet, "get_wallet_data", [], toncenterKey);
+      const actualBalance = BigInt(balResult.stack[0].value ?? balResult.stack[0]);
+      let sellAmount = amount === "all" ? actualBalance : BigInt(amount);
+      if (sellAmount > actualBalance) sellAmount = actualBalance;
+      if (sellAmount <= 0n) return { success: false, error: "Zero balance" };
+
+      const body = beginCell()
+        .storeUint(0x595f07bc, 32).storeUint(0, 64).storeCoins(sellAmount)
+        .storeAddress(Address.parse(walletAddr)).storeBit(false).endCell();
+      const txResult = await sdk.ton.sendTON(memeWallet, 0.3, body.toBoc().toString("base64"));
+      return { success: true, data: { txRef: txResult?.txRef, sold: (Number(sellAmount) / 1e9).toFixed(2) + " tokens" } };
+    },
+  },
+];
+Available Tools (6):
+
+Tool	Category	Description
+groypad_deploy	action	Guides users to deploy via groypfi.io/launchpad
+groypad_list_tokens	data	List active Groypad tokens with market cap & progress
+groypad_token_info	data	Get on-chain bonding curve data (price, supply, progress)
+groypad_get_quote	data	Preview buy/sell quote without executing a trade
+groypad_buy	action	Buy tokens on the bonding curve
+groypad_sell	action	Sell tokens back to the bonding curve
+Key SDK differences from legacy format:
+
+ESM exports: export const tools = (sdk) => [...]
+Secrets via sdk.secrets.get("KEY") — not hardcoded
+Wallet access via sdk.ton.getAddress() and sdk.ton.sendTON()
+Logging via sdk.log.info()
+JSON Schema parameters with required array
+Tool scoping: scope: "dm-only" for action tools
+Tool categories: "action" vs "data-bearing"
+Usage in Teleton chat:
+
+"I want to deploy a new token" → directs to groypfi.io/launchpad
+"How many tokens would I get for 10 TON on EQ...?"
+"List trending Groypad tokens"
+"Buy 5 TON of PEPE on Groypad"
+"Sell all my DOGE tokens on Groypad"
+

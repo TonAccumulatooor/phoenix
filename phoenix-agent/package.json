@@ -1,0 +1,12 @@
+{
+  "name": "phoenix-agent",
+  "version": "1.0.0",
+  "description": "Phoenix Agent — Teleton plugin for token migration execution",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "@dedust/sdk": "^0.8.7",
+    "@ton/ton": "^15.0.0",
+    "@ton/crypto": "^3.3.0"
+  }
+}

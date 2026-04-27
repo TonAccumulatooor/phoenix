@@ -1,0 +1,78 @@
+import os
+import re
+from pathlib import Path
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).parent
+load_dotenv(BASE_DIR / ".env")
+
+DB_PATH = BASE_DIR / "phoenix.db"
+
+TON_API_BASE = "https://tonapi.io/v2"
+TON_API_KEY = os.getenv("TON_API_KEY", "")
+
+VAULT_WALLET_ADDRESS = os.getenv("PHOENIX_VAULT_ADDRESS", "")
+VAULT_MNEMONIC = os.getenv("PHOENIX_VAULT_MNEMONIC", "")
+
+PHOENIX_TOKEN_ADDRESS = os.getenv("PHOENIX_TOKEN_ADDRESS", "")
+
+AGENT_WALLET_ADDRESS = os.getenv("PHOENIX_AGENT_WALLET", "UQCd7P6pHn6uCF1TXiJc91EDAVSaaVcbQZmc6uap9dHaxuR4")
+AGENT_MNEMONIC = os.getenv("PHOENIX_AGENT_MNEMONIC", "")
+
+
+# --- Validation helpers ---
+
+# Matches both raw (0:hex64) and user-friendly (EQ/UQ base64) TON addresses
+TON_ADDRESS_RE = re.compile(
+    r"^(0:[0-9a-fA-F]{64}|[EU]Q[A-Za-z0-9_\-]{46})$"
+)
+
+
+def is_valid_ton_address(addr: str) -> bool:
+    return bool(TON_ADDRESS_RE.match(addr))
+
+DEPOSIT_WINDOW_DAYS = 14
+LATE_CLAIM_WINDOW_DAYS = 30
+THRESHOLD_PERCENT = 0.51
+
+TIER1_MULTIPLIER = 1.0
+TIER1_PLUS_MULTIPLIER = 0.75
+TIER2_MULTIPLIER = 0.75
+TIER3_MULTIPLIER = 0.5
+TOPUP_BONUS_MULTIPLIER = 1.10
+
+NEW_TOKEN_SUPPLY = 1_000_000_000
+FULL_DEV_BUY_TON = 1050
+FULL_DEV_BUY_SUPPLY_PERCENT = 0.76
+
+PROPOSAL_FEE_USD = 25
+
+# Treasury retention from each migration (% of NEW_TOKEN_SUPPLY)
+TREASURY_RETENTION_PERCENT = 0.01       # 1% total retained
+TREASURY_LP_SEED_PERCENT = 0.005        # 0.5% → seeds PHX/NEWTOKEN LP
+TREASURY_NFT_AIRDROP_PERCENT = 0.005    # 0.5% → airdropped to Groyper NFT holders
+TREASURY_LP_SEED_AMOUNT = int(NEW_TOKEN_SUPPLY * TREASURY_LP_SEED_PERCENT)      # 5,000,000
+TREASURY_NFT_AIRDROP_AMOUNT = int(NEW_TOKEN_SUPPLY * TREASURY_NFT_AIRDROP_PERCENT)  # 5,000,000
+
+# Groyper NFT collection
+GROYPER_NFT_COLLECTION = "EQAmTVtgzf14BiZSvDFQgA3vY7Isey8sHB3nAtZQS-2Vs2hw"
+GROYPER_NFT_SUPPLY = 271
+GROYPER_AIRDROP_PER_NFT = 18_450        # 5,000,000 / 271 ≈ 18,450
+
+GROYPAD_GRADUATION_TON = 1050
+GROYPAD_MAX_CURVE_SUPPLY = 760_000_000
+GROYPAD_TRADE_FEE = 0.03
+GROYPAD_TOTAL_SUPPLY = 1_000_000_000
+
+KNOWN_BURN_ADDRESSES = [
+    "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADl",
+]
+
+CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:3000",
+    "http://192.168.86.32:5173",
+    "http://192.168.86.32:5174",
+]
