@@ -72,6 +72,9 @@ export interface WalletAllocation {
   newmeme_from_tier2: number;
   newmeme_subtotal: number;
   topup_bonus: number;
+  phx_boost: number;
+  phx_boost_pct: number;
+  phx_balance: number;
   newmeme_total: number;
 }
 
@@ -102,8 +105,17 @@ export interface PreviewResult {
     symbol: string;
     total_supply: number;
     holders: number;
+    image: string | null;
   };
-  estimated_circulating: number;
+  circulating_supply: number;
+  circulating_percent: number;
+  excluded_addresses: {
+    address: string;
+    balance: number;
+    percent: number;
+    reason: string;
+    name: string | null;
+  }[];
   threshold_amount: number;
   base_ratio: number;
   lp_estimation: LPEstimation;
@@ -130,4 +142,6 @@ export interface PlatformStats {
   active_migrations: number;
   successful_migrations: number;
   total_tokens_deposited: number;
+  wallets_served: number;
+  total_ton_extracted: number;
 }

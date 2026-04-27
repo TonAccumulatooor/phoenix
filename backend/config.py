@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / ".env")
 
-DB_PATH = BASE_DIR / "phoenix.db"
+DB_PATH = Path(os.getenv("DB_PATH", str(BASE_DIR / "phoenix.db")))
 
 TON_API_BASE = "https://tonapi.io/v2"
 TON_API_KEY = os.getenv("TON_API_KEY", "")
@@ -18,6 +18,7 @@ PHOENIX_TOKEN_ADDRESS = os.getenv("PHOENIX_TOKEN_ADDRESS", "")
 
 AGENT_WALLET_ADDRESS = os.getenv("PHOENIX_AGENT_WALLET", "UQCd7P6pHn6uCF1TXiJc91EDAVSaaVcbQZmc6uap9dHaxuR4")
 AGENT_MNEMONIC = os.getenv("PHOENIX_AGENT_MNEMONIC", "")
+AGENT_API_KEY = os.getenv("PHOENIX_AGENT_API_KEY", "")
 
 
 # --- Validation helpers ---
@@ -59,6 +60,12 @@ GROYPER_NFT_COLLECTION = "EQAmTVtgzf14BiZSvDFQgA3vY7Isey8sHB3nAtZQS-2Vs2hw"
 GROYPER_NFT_SUPPLY = 271
 GROYPER_AIRDROP_PER_NFT = 18_450        # 5,000,000 / 271 ≈ 18,450
 
+# PHX holder boost tiers
+PHX_BOOST_TIER1_MIN = 5_000_000     # 0.5% of 1B supply
+PHX_BOOST_TIER1_BONUS = 0.05        # +5% NEWTOKEN
+PHX_BOOST_TIER2_MIN = 10_000_000    # 1% of 1B supply
+PHX_BOOST_TIER2_BONUS = 0.10        # +10% NEWTOKEN
+
 GROYPAD_GRADUATION_TON = 1050
 GROYPAD_MAX_CURVE_SUPPLY = 760_000_000
 GROYPAD_TRADE_FEE = 0.03
@@ -69,10 +76,9 @@ KNOWN_BURN_ADDRESSES = [
     "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADl",
 ]
 
+_extra_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 CORS_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:3000",
-    "http://192.168.86.32:5173",
-    "http://192.168.86.32:5174",
-]
+] + _extra_origins

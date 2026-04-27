@@ -12,7 +12,7 @@ from services.conversion import (
 )
 from services.lp_estimator import estimate_extraction
 from services.groypad_curve import estimate_dev_buy
-from services.ton_api import get_jetton_info, estimate_circulating_supply
+from services.ton_api import get_jetton_info, estimate_circulating_supply, get_phx_balance
 from config import FULL_DEV_BUY_TON, NEW_TOKEN_SUPPLY, THRESHOLD_PERCENT
 
 router = APIRouter(prefix="/api/calculator", tags=["calculator"])
@@ -110,7 +110,8 @@ async def calculate_wallet_allocation(migration_id: str, wallet_address: str):
         has_topup = topup["total"] > 0
 
         base_ratio = migration["base_ratio"]
-        alloc = calculate_allocation(dep["t1"], dep["t1p"], dep["t2"], base_ratio, has_topup)
+        phx_bal = await get_phx_balance(wallet_address)
+        alloc = calculate_allocation(dep["t1"], dep["t1p"], dep["t2"], base_ratio, has_topup, phx_balance=phx_bal)
 
         return {
             "wallet_address": wallet_address,

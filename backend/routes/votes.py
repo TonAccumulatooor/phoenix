@@ -20,7 +20,7 @@ async def cast_vote(req: VoteRequest):
             raise HTTPException(400, "Migration is not in voting phase")
 
         dist_cursor = await db.execute(
-            "SELECT newmeme_total FROM distributions WHERE migration_id = ? AND wallet_address = ? AND status = 'distributed'",
+            "SELECT newmeme_total FROM distributions WHERE migration_id = ? AND wallet_address = ? AND status = 'completed'",
             (req.migration_id, req.voter_wallet),
         )
         dist = await dist_cursor.fetchone()
@@ -87,7 +87,7 @@ async def get_vote_results(migration_id: str):
         total_voters = (await total_voters_cursor.fetchone())["cnt"]
 
         eligible_cursor = await db.execute(
-            "SELECT COUNT(*) as cnt FROM distributions WHERE migration_id = ? AND status = 'distributed'",
+            "SELECT COUNT(*) as cnt FROM distributions WHERE migration_id = ? AND status = 'completed'",
             (migration_id,),
         )
         eligible = (await eligible_cursor.fetchone())["cnt"]

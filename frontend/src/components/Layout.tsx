@@ -21,7 +21,7 @@ export function Layout() {
           </div>
           <div className="flex items-center gap-6 text-sm text-ash-500">
             <Link to="/docs" className="hover:text-ember-400 transition-colors">Docs</Link>
-            <a href="https://github.com/PhoenixRiseTON/phoenix" target="_blank" rel="noopener noreferrer" className="hover:text-ember-400 transition-colors">GitHub</a>
+            <a href="https://github.com/TonAccumulatooor/phoenix" target="_blank" rel="noopener noreferrer" className="hover:text-ember-400 transition-colors">GitHub</a>
             <a href="https://t.me/phoenixrisetg" target="_blank" rel="noopener noreferrer" className="hover:text-ember-400 transition-colors">Telegram</a>
           </div>
         </div>

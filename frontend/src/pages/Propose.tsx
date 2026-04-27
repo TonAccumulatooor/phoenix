@@ -185,7 +185,7 @@ export function Propose() {
 
   // Groyper NFT fee waiver check
   const [nftHolder, setNftHolder] = useState<{ holds: boolean; count: number } | null>(null);
-  const [nftChecking, setNftChecking] = useState(false);
+  const [, setNftChecking] = useState(false);
 
   useEffect(() => {
     if (!walletAddress) {

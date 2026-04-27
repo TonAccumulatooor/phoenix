@@ -47,10 +47,12 @@ const BUY_GAS_TON      = 0.3;
 
 // ── Backend helper ────────────────────────────────────────────────────────────
 
-async function backendPost(backendUrl, path, body = {}) {
+async function backendPost(backendUrl, path, body = {}, agentKey = '') {
+  const headers = { 'Content-Type': 'application/json' };
+  if (agentKey) headers['X-Agent-Key'] = agentKey;
   const resp = await fetch(`${backendUrl}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   });
@@ -61,8 +63,11 @@ async function backendPost(backendUrl, path, body = {}) {
   return resp.json();
 }
 
-async function backendGet(backendUrl, path) {
+async function backendGet(backendUrl, path, agentKey = '') {
+  const headers = {};
+  if (agentKey) headers['X-Agent-Key'] = agentKey;
   const resp = await fetch(`${backendUrl}${path}`, {
+    headers,
     signal: AbortSignal.timeout(15000),
   });
   if (!resp.ok) throw new Error(`Backend GET ${path}: ${resp.status}`);
@@ -204,10 +209,11 @@ function sellOldTokenTool(sdk) {
         amount: { type: 'number', description: 'Total amount of old tokens to sell' },
         min_ton_out: { type: 'number', description: 'Minimum acceptable TON output (slippage protection)' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['migration_id', 'jetton_address', 'amount'],
     },
-    execute: async ({ migration_id, jetton_address, amount, min_ton_out = 0, backend_url = 'http://localhost:8000' }) => {
+    execute: async ({ migration_id, jetton_address, amount, min_ton_out = 0, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       sdk.log.info(`Selling ${amount} tokens from ${jetton_address}`);
 
       try {
@@ -235,7 +241,7 @@ function sellOldTokenTool(sdk) {
         const report = await backendPost(backend_url, `/api/migrations/${migration_id}/extracted-ton`, {
           extracted_ton: tonReceived,
           dev_buy_ton: tonReceived,
-        });
+        }, agent_key);
         sdk.log.info(`Backend updated: extracted_ton=${tonReceived}, status=${report.status}`);
 
         return {
@@ -279,10 +285,11 @@ function buildMetadataTool(sdk) {
           },
         },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['migration_id'],
     },
-    execute: async ({ migration_id, name, symbol, description, image, socials, backend_url = 'http://localhost:8000' }) => {
+    execute: async ({ migration_id, name, symbol, description, image, socials, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       try {
         // If overrides provided, send them; otherwise backend uses stored metadata
         const body = {};
@@ -297,6 +304,7 @@ function buildMetadataTool(sdk) {
           backend_url,
           `/api/migrations/${migration_id}/build-metadata`,
           hasOverrides ? body : undefined,
+          agent_key,
         );
 
         // The URL is relative (/api/uploads/...) — make absolute for Groypad
@@ -428,10 +436,11 @@ function discoverTokenAddressTool(sdk) {
         migration_id: { type: 'string', description: 'Migration ID to report the new address to' },
         dev_buy_ton: { type: 'number', description: 'TON spent on dev buy (for backend reporting)' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['tx_ref', 'migration_id'],
     },
-    execute: async ({ tx_ref, migration_id, dev_buy_ton, backend_url = 'http://localhost:8000' }) => {
+    execute: async ({ tx_ref, migration_id, dev_buy_ton, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       const apiKey = sdk.secrets?.get?.('TON_API_KEY');
       sdk.log.info(`Discovering new token address from TX: ${tx_ref}`);
 
@@ -524,7 +533,7 @@ function discoverTokenAddressTool(sdk) {
           new_token_address: newTokenAddress,
           agent_supply: agentSupply,
           dev_buy_ton: dev_buy_ton || undefined,
-        });
+        }, agent_key);
         sdk.log.info(`Backend updated: new_token=${newTokenAddress}, status=${report.status}`);
 
         return {
@@ -707,10 +716,11 @@ function distributeNewTokenTool(sdk) {
         jetton_address: { type: 'string', description: 'New token jetton master address' },
         batch_size: { type: 'number', description: 'Number of transfers per batch (default 50)' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['migration_id', 'jetton_address'],
     },
-    execute: async ({ migration_id, jetton_address, batch_size = 50, backend_url = 'http://localhost:8000' }) => {
+    execute: async ({ migration_id, jetton_address, batch_size = 50, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       sdk.log.info(`Starting distribution for migration ${migration_id}`);
 
       try {
@@ -718,7 +728,7 @@ function distributeNewTokenTool(sdk) {
         sdk.log.info('Executing distributions on backend...');
         let distResult;
         try {
-          distResult = await backendPost(backend_url, `/api/migrations/${migration_id}/execute-distributions`);
+          distResult = await backendPost(backend_url, `/api/migrations/${migration_id}/execute-distributions`, {}, agent_key);
         } catch (e) {
           // 409 = already executed — fetch existing
           if (e.message.includes('409')) {
@@ -729,7 +739,7 @@ function distributeNewTokenTool(sdk) {
         }
 
         // Step 2: Fetch the distribution records
-        const distData = await backendGet(backend_url, `/api/migrations/${migration_id}/distributions-executed`);
+        const distData = await backendGet(backend_url, `/api/migrations/${migration_id}/distributions-executed`, agent_key);
         const pending = distData.distributions.filter(d => d.status === 'pending');
 
         if (pending.length === 0) {
@@ -771,7 +781,7 @@ function distributeNewTokenTool(sdk) {
             try {
               await backendPost(backend_url, `/api/migrations/${migration_id}/distributions-mark-sent`, {
                 distributions: results.txMap,
-              });
+              }, agent_key);
               results.txMap = []; // Reset after successful report
             } catch (e) {
               sdk.log.warn(`Failed to mark batch as sent: ${e.message}`);
@@ -828,10 +838,11 @@ function claimCreatorFeesTool(sdk) {
         new_token_address: { type: 'string', description: 'Deployed Groypad meme contract address' },
         migration_id: { type: 'string', description: 'Migration ID (for backend reporting)' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['creator_fee_wallet', 'ticker', 'new_token_address'],
     },
-    execute: async ({ creator_fee_wallet, ticker, new_token_address, migration_id, backend_url = 'http://localhost:8000' }) => {
+    execute: async ({ creator_fee_wallet, ticker, new_token_address, migration_id, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       sdk.log.info(`Claiming creator fees → ${creator_fee_wallet} for ${ticker} (${new_token_address})`);
 
       try {
@@ -855,7 +866,7 @@ function claimCreatorFeesTool(sdk) {
           try {
             await backendPost(backend_url, `/api/migrations/${migration_id}/creator-reward`, {
               wallet: creator_fee_wallet,
-            });
+            }, agent_key);
             sdk.log.info(`Backend updated: creator_reward_wallet → ${creator_fee_wallet}`);
           } catch (e) {
             sdk.log.warn(`Backend creator-reward update failed: ${e.message}`);
@@ -908,10 +919,11 @@ function nftAirdropTool(sdk) {
         migration_id: { type: 'string', description: 'Migration ID' },
         jetton_address: { type: 'string', description: 'New token jetton master address' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['migration_id', 'jetton_address'],
     },
-    execute: async ({ migration_id, jetton_address, backend_url = 'http://localhost:8000' }) => {
+    execute: async ({ migration_id, jetton_address, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       sdk.log.info(`Starting NFT airdrop for migration ${migration_id}`);
 
       try {
@@ -919,7 +931,7 @@ function nftAirdropTool(sdk) {
         sdk.log.info('Taking NFT holder snapshot...');
         let snapshotResult;
         try {
-          snapshotResult = await backendPost(backend_url, `/api/migrations/${migration_id}/nft-airdrop-snapshot`);
+          snapshotResult = await backendPost(backend_url, `/api/migrations/${migration_id}/nft-airdrop-snapshot`, {}, agent_key);
         } catch (e) {
           if (e.message.includes('409')) {
             sdk.log.info('NFT snapshot already taken — fetching existing records');
@@ -929,7 +941,7 @@ function nftAirdropTool(sdk) {
         }
 
         // Step 2: Fetch airdrop records
-        const airdropData = await backendGet(backend_url, `/api/migrations/${migration_id}/nft-airdrops`);
+        const airdropData = await backendGet(backend_url, `/api/migrations/${migration_id}/nft-airdrops`, agent_key);
         const pending = airdropData.airdrops.filter(a => a.status === 'pending');
 
         if (pending.length === 0) {
@@ -966,7 +978,7 @@ function nftAirdropTool(sdk) {
           try {
             await backendPost(backend_url, `/api/migrations/${migration_id}/nft-airdrops-mark-sent`, {
               airdrops: results.txMap,
-            });
+            }, agent_key);
           } catch (e) {
             sdk.log.warn(`Failed to mark NFT airdrops as sent: ${e.message}`);
           }
@@ -1152,10 +1164,11 @@ function checkMigrationStatusTool(sdk) {
       properties: {
         migration_id: { type: 'string', description: 'Migration ID' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['migration_id'],
     },
-    execute: async ({ migration_id, backend_url = 'http://localhost:8000' }) => {
+    execute: async ({ migration_id, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       try {
         return await backendGet(backend_url, `/api/migrations/${migration_id}`);
       } catch (error) {
@@ -1183,6 +1196,7 @@ function executeMigrationTool(sdk) {
         migration_id: { type: 'string' },
         phoenix_token_address: { type: 'string', description: 'PHX jetton master address (for LP creation)' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
+        agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['migration_id'],
     },
@@ -1190,6 +1204,7 @@ function executeMigrationTool(sdk) {
       migration_id,
       phoenix_token_address,
       backend_url = 'http://localhost:8000',
+      agent_key = '',
     }) => {
       sdk.log.info(`=== PHOENIX MIGRATION PIPELINE: ${migration_id} ===`);
 
@@ -1223,6 +1238,7 @@ function executeMigrationTool(sdk) {
           jetton_address: migration.old_token.address,
           amount: migration.total_deposited,
           backend_url,
+          agent_key,
         });
 
         if (!sellResult.success) return fail('sell_old_token', sellResult.error);
@@ -1233,7 +1249,7 @@ function executeMigrationTool(sdk) {
         // ── Step 3: Build metadata ────────────────────────────────────────
         sdk.log.info('Step 3: Building TEP-64 metadata...');
         const metaTool = tools(sdk).find(t => t.name === 'phoenix_build_metadata');
-        const metaResult = await metaTool.execute({ migration_id, backend_url });
+        const metaResult = await metaTool.execute({ migration_id, backend_url, agent_key });
 
         if (!metaResult.success) return fail('build_metadata', metaResult.error);
 
@@ -1269,6 +1285,7 @@ function executeMigrationTool(sdk) {
           migration_id,
           dev_buy_ton: tonReceived,
           backend_url,
+          agent_key,
         });
 
         if (!discoverResult.success) {
@@ -1280,6 +1297,7 @@ function executeMigrationTool(sdk) {
             migration_id,
             dev_buy_ton: tonReceived,
             backend_url,
+            agent_key,
           });
           if (!retry.success) return fail('discover_token', retry.error);
           Object.assign(discoverResult, retry);
@@ -1303,6 +1321,7 @@ function executeMigrationTool(sdk) {
             new_token_address: newTokenAddress,
             migration_id,
             backend_url,
+            agent_key,
           });
 
           if (claimResult.success) {
@@ -1328,6 +1347,7 @@ function executeMigrationTool(sdk) {
           migration_id,
           jetton_address: newTokenAddress,
           backend_url,
+          agent_key,
         });
 
         if (!distResult.success) return fail('distribute', distResult.error);
@@ -1346,6 +1366,7 @@ function executeMigrationTool(sdk) {
           migration_id,
           jetton_address: newTokenAddress,
           backend_url,
+          agent_key,
         });
 
         if (airdropResult.success) {

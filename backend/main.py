@@ -86,11 +86,25 @@ async def platform_stats():
         )
         deposited = (await total_deposited.fetchone())["total"]
 
+        # Unique wallets that have deposited across all migrations
+        wallets = await db.execute(
+            "SELECT COUNT(DISTINCT wallet_address) as cnt FROM deposits"
+        )
+        wallets_served = (await wallets.fetchone())["cnt"]
+
+        # Total TON extracted across all completed migrations
+        ton_extracted = await db.execute(
+            "SELECT COALESCE(SUM(extracted_ton), 0) as total FROM migrations WHERE extracted_ton IS NOT NULL"
+        )
+        total_ton_extracted = (await ton_extracted.fetchone())["total"]
+
         return {
             "total_migrations": total_count,
             "active_migrations": active_count,
             "successful_migrations": success_count,
             "total_tokens_deposited": deposited,
+            "wallets_served": wallets_served,
+            "total_ton_extracted": total_ton_extracted,
         }
     finally:
         await db.close()

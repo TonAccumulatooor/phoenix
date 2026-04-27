@@ -1,7 +1,7 @@
 import httpx
 import asyncio
 from typing import Optional
-from config import TON_API_BASE, TON_API_KEY, KNOWN_BURN_ADDRESSES
+from config import TON_API_BASE, TON_API_KEY, KNOWN_BURN_ADDRESSES, PHOENIX_TOKEN_ADDRESS
 
 
 def _headers() -> dict:
@@ -32,6 +32,32 @@ async def get_jetton_info(jetton_address: str) -> Optional[dict]:
             "holders_count": data.get("holders_count", 0),
             "image": metadata.get("image") or (data.get("preview") if isinstance(data.get("preview"), str) else None),
         }
+
+
+async def get_phx_balance(wallet_address: str) -> float:
+    """Get PHX token balance for a wallet (human-readable, not raw)."""
+    if not PHOENIX_TOKEN_ADDRESS:
+        return 0
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            f"{TON_API_BASE}/accounts/{wallet_address}/jettons/{PHOENIX_TOKEN_ADDRESS}",
+            headers=_headers(),
+        )
+    if resp.status_code != 200:
+        return 0
+    data = resp.json()
+    raw = int(data.get("balance", 0))
+    decimals = int(data.get("jetton", {}).get("decimals", 9))
+    return raw / (10 ** decimals)
+
+
+async def get_phx_balances(wallet_addresses: list[str]) -> dict[str, float]:
+    """Get PHX balances for multiple wallets. Returns {wallet: balance}."""
+    results = {}
+    for wallet in wallet_addresses:
+        results[wallet] = await get_phx_balance(wallet)
+        await asyncio.sleep(0.1)  # rate limit
+    return results
 
 
 async def get_jetton_holders(

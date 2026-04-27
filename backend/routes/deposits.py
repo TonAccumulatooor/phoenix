@@ -11,7 +11,7 @@ from services.conversion import (
     compute_base_ratio,
 )
 from services.snapshot import get_snapshot_balance
-from services.ton_api import verify_jetton_transfer
+from services.ton_api import verify_jetton_transfer, get_phx_balance
 
 logger = logging.getLogger("deposits")
 
@@ -35,6 +35,15 @@ async def submit_deposit(record: DepositRecord):
         deadline = datetime.fromisoformat(migration["deposit_deadline"])
         if datetime.now(timezone.utc) > deadline:
             raise HTTPException(400, "Deposit window has closed")
+
+        # Check for duplicate tx_hash
+        if record.tx_hash and record.tx_hash != "pending_verification":
+            dup_cursor = await db.execute(
+                "SELECT id FROM deposits WHERE migration_id = ? AND tx_hash = ?",
+                (record.migration_id, record.tx_hash),
+            )
+            if await dup_cursor.fetchone():
+                raise HTTPException(409, "This transaction has already been recorded")
 
         # Verify TX on-chain if tx_hash provided and vault address configured
         tx_verified = None
@@ -167,12 +176,14 @@ async def get_wallet_deposits(migration_id: str, wallet_address: str):
             raise HTTPException(404, "Migration not found")
 
         base_ratio = migration["base_ratio"]
+        phx_bal = await get_phx_balance(wallet_address)
         alloc = calculate_allocation(
             summary["tier1_total"],
             summary["tier1plus_total"],
             summary["tier2_total"],
             base_ratio,
             summary["has_topup"],
+            phx_balance=phx_bal,
         )
 
         return {

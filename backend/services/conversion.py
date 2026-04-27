@@ -14,6 +14,10 @@ from config import (
     GROYPAD_TRADE_FEE,
     TREASURY_LP_SEED_AMOUNT,
     TREASURY_NFT_AIRDROP_AMOUNT,
+    PHX_BOOST_TIER1_MIN,
+    PHX_BOOST_TIER1_BONUS,
+    PHX_BOOST_TIER2_MIN,
+    PHX_BOOST_TIER2_BONUS,
 )
 
 
@@ -61,12 +65,22 @@ def classify_deposit(
     }
 
 
+def get_phx_boost(phx_balance: float) -> float:
+    """Return PHX holder boost multiplier based on balance."""
+    if phx_balance >= PHX_BOOST_TIER2_MIN:
+        return PHX_BOOST_TIER2_BONUS
+    if phx_balance >= PHX_BOOST_TIER1_MIN:
+        return PHX_BOOST_TIER1_BONUS
+    return 0.0
+
+
 def calculate_allocation(
     tier1_amount: float,
     tier1plus_amount: float,
     tier2_amount: float,
     base_ratio: float,
     has_topup: bool,
+    phx_balance: float = 0,
 ) -> dict:
     """Calculate NEWMEME allocation for a single depositor."""
     from_tier1 = tier1_amount * base_ratio * TIER1_MULTIPLIER
@@ -79,7 +93,10 @@ def calculate_allocation(
     if has_topup:
         topup_bonus = subtotal * (TOPUP_BONUS_MULTIPLIER - 1)
 
-    total = subtotal + topup_bonus
+    phx_boost_pct = get_phx_boost(phx_balance)
+    phx_boost = subtotal * phx_boost_pct
+
+    total = subtotal + topup_bonus + phx_boost
 
     return {
         "newmeme_from_tier1": from_tier1,
@@ -87,6 +104,9 @@ def calculate_allocation(
         "newmeme_from_tier2": from_tier2,
         "newmeme_subtotal": subtotal,
         "topup_bonus": topup_bonus,
+        "phx_boost": phx_boost,
+        "phx_boost_pct": phx_boost_pct,
+        "phx_balance": phx_balance,
         "newmeme_total": total,
     }
 
@@ -105,6 +125,7 @@ async def calculate_all_distributions(
     agent_supply: float,
 ) -> dict:
     """Calculate distributions for all depositors with pro-rata scaling if needed."""
+    from services.ton_api import get_phx_balances
 
     cursor = await db.execute(
         "SELECT wallet_address, tier1_amount, tier1plus_amount, tier2_amount FROM deposits WHERE migration_id = ?",
@@ -118,17 +139,23 @@ async def calculate_all_distributions(
     )
     topup_wallets = {row["wallet_address"] for row in await topup_cursor.fetchall()}
 
+    # Fetch PHX balances for all depositors
+    wallet_list = [dep["wallet_address"] for dep in deposits]
+    phx_balances = await get_phx_balances(wallet_list)
+
     allocations = []
     total_demand = 0
 
     for dep in deposits:
         has_topup = dep["wallet_address"] in topup_wallets
+        phx_bal = phx_balances.get(dep["wallet_address"], 0)
         alloc = calculate_allocation(
             dep["tier1_amount"],
             dep["tier1plus_amount"],
             dep["tier2_amount"],
             base_ratio,
             has_topup,
+            phx_balance=phx_bal,
         )
         alloc["wallet_address"] = dep["wallet_address"]
         alloc["deposit_amount"] = dep["tier1_amount"] + dep["tier1plus_amount"] + dep["tier2_amount"]

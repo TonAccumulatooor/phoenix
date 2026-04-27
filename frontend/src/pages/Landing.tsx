@@ -1,7 +1,9 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { PhoenixLogo } from '../components/PhoenixLogo';
 import { StatCard } from '../components/StatCard';
+import { api } from '../lib/api';
+import { formatNumber } from '../lib/utils';
 import {
   Flame,
   Shield,
@@ -68,6 +70,12 @@ const FEATURES = [
 ];
 
 export function Landing() {
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    api.stats().then(setStats).catch(() => {});
+  }, []);
+
   return (
     <div className="relative">
       {/* Hero — asymmetric, full-bleed */}
@@ -179,10 +187,10 @@ export function Landing() {
       <section className="relative z-10 border-y border-ash-800/30">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-ash-800/30">
-            <StatCard icon={<Flame size={20} />} label="Migrations" value="0" subtitle="and counting" delay={0.1} />
-            <StatCard icon={<Users size={20} />} label="Wallets Served" value="0" delay={0.2} />
-            <StatCard icon={<Coins size={20} />} label="Tokens Reborn" value="0" delay={0.3} />
-            <StatCard icon={<BarChart3 size={20} />} label="TON Extracted" value="0" delay={0.4} />
+            <StatCard icon={<Flame size={20} />} label="Migrations" value={stats?.total_migrations ?? 0} subtitle="and counting" delay={0.1} />
+            <StatCard icon={<Users size={20} />} label="Wallets Served" value={stats?.wallets_served ?? 0} delay={0.2} />
+            <StatCard icon={<Coins size={20} />} label="Tokens Reborn" value={stats?.successful_migrations ?? 0} delay={0.3} />
+            <StatCard icon={<BarChart3 size={20} />} label="TON Extracted" value={stats?.total_ton_extracted ? formatNumber(Math.round(stats.total_ton_extracted)) : 0} delay={0.4} />
           </div>
         </div>
       </section>
@@ -279,6 +287,9 @@ export function Landing() {
           </div>
           <p className="text-xs text-ash-500 mt-4 ml-1">
             TON top-up contributors receive an additional 10% bonus on their allocation.
+          </p>
+          <p className="text-xs text-ash-500 mt-2 ml-1">
+            PHX holders get a bonus: 5M-9.99M PHX = +5% NEWTOKEN, 10M+ PHX = +10% NEWTOKEN.
           </p>
         </div>
       </section>

@@ -17,7 +17,6 @@ import {
   ChevronRight,
   ExternalLink,
   AlertTriangle,
-  Target,
   Layers,
   RefreshCw,
 } from 'lucide-react';
@@ -139,7 +138,7 @@ export function Docs() {
                 <p>
                   Phoenix is a trustless token migration platform built on the TON blockchain. It enables any
                   community to migrate their existing token to a fresh launch on{' '}
-                  <a href="https://groypad.com" target="_blank" rel="noopener noreferrer" className="text-ember-400 hover:underline">
+                  <a href="https://groypfi.io/launchpad" target="_blank" rel="noopener noreferrer" className="text-ember-400 hover:underline">
                     Groypad
                   </a>{' '}
                   — no leader required, no trust needed.
@@ -244,6 +243,33 @@ export function Docs() {
                 <p className="text-xs text-ash-500 mt-4">
                   TON top-up contributors receive an additional 10% bonus on their entire allocation.
                 </p>
+
+                <div className="mt-5 pt-5 border-t border-ash-800/40">
+                  <h3 className="text-base font-display font-bold text-white mb-3 flex items-center gap-2">
+                    <Flame size={16} className="text-amber-400" />
+                    PHX Holder Boost
+                  </h3>
+                  <p className="text-sm text-ash-400 leading-relaxed mb-3">
+                    Wallets holding PHX tokens at the time of distribution receive a bonus on their NEWTOKEN allocation.
+                    This boost stacks with the top-up bonus.
+                  </p>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                      <div className="flex items-center gap-3">
+                        <span className="text-amber-400 font-bold text-sm">Tier 1</span>
+                        <span className="text-sm text-ash-400">Hold 5,000,000 - 9,999,999 PHX (0.5% - 0.99% of supply)</span>
+                      </div>
+                      <span className="font-mono font-bold text-amber-400 shrink-0 ml-4">+5%</span>
+                    </div>
+                    <div className="flex items-center justify-between p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                      <div className="flex items-center gap-3">
+                        <span className="text-amber-400 font-bold text-sm">Tier 2</span>
+                        <span className="text-sm text-ash-400">Hold 10,000,000+ PHX (1%+ of supply)</span>
+                      </div>
+                      <span className="font-mono font-bold text-amber-400 shrink-0 ml-4">+10%</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="phoenix-card p-6">
@@ -385,7 +411,7 @@ export function Docs() {
               <div className="phoenix-card p-6 space-y-4">
                 <p className="text-sm text-ash-300 leading-relaxed">
                   New tokens are launched on{' '}
-                  <a href="https://groypad.com" target="_blank" rel="noopener noreferrer" className="text-ember-400 hover:underline inline-flex items-center gap-1">
+                  <a href="https://groypfi.io/launchpad" target="_blank" rel="noopener noreferrer" className="text-ember-400 hover:underline inline-flex items-center gap-1">
                     Groypad <ExternalLink size={12} />
                   </a>, a TON-native token launchpad with a bonding curve mechanism. The Phoenix Agent
                   performs a "dev buy" — the first purchase on the bonding curve — using the extracted TON.
@@ -455,6 +481,13 @@ export function Docs() {
                     <h4 className="text-sm font-bold text-white mb-1">LP Pair Seeding</h4>
                     <p className="text-xs text-ash-400">
                       Every migration seeds a PHX/NEWTOKEN LP pool on DeDust, expanding PHX's trading pairs and volume.
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-ash-900/50 border border-ash-800/40">
+                    <h4 className="text-sm font-bold text-white mb-1">Holder Boost</h4>
+                    <p className="text-xs text-ash-400">
+                      Wallets holding 5M+ PHX receive a 5% bonus on NEWTOKEN allocations. Holding 10M+ PHX increases
+                      the bonus to 10%. Checked at the time of distribution.
                     </p>
                   </div>
                   <div className="p-3 rounded-lg bg-ash-900/50 border border-ash-800/40">

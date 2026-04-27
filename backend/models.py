@@ -1,6 +1,15 @@
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from enum import Enum
+
+_TON_ADDRESS_RE = re.compile(r"^(0:[0-9a-fA-F]{64}|[EU]Q[A-Za-z0-9_\-]{46})$")
+
+
+def _validate_ton_address(v: str) -> str:
+    if not _TON_ADDRESS_RE.match(v):
+        raise ValueError(f"Invalid TON address: {v}")
+    return v
 
 
 class MigrationStatus(str, Enum):
@@ -48,12 +57,22 @@ class DepositRecord(BaseModel):
     amount: float
     tx_hash: str
 
+    @field_validator("wallet_address")
+    @classmethod
+    def validate_wallet(cls, v: str) -> str:
+        return _validate_ton_address(v)
+
 
 class TopupRecord(BaseModel):
     migration_id: str
     wallet_address: str
     ton_amount: float
     tx_hash: str
+
+    @field_validator("wallet_address")
+    @classmethod
+    def validate_wallet(cls, v: str) -> str:
+        return _validate_ton_address(v)
 
 
 class LateClaimRecord(BaseModel):
@@ -62,11 +81,21 @@ class LateClaimRecord(BaseModel):
     amount: float
     tx_hash: str
 
+    @field_validator("wallet_address")
+    @classmethod
+    def validate_wallet(cls, v: str) -> str:
+        return _validate_ton_address(v)
+
 
 class VoteRequest(BaseModel):
     migration_id: str
     voter_wallet: str
     candidate_wallet: str
+
+    @field_validator("voter_wallet", "candidate_wallet")
+    @classmethod
+    def validate_wallets(cls, v: str) -> str:
+        return _validate_ton_address(v)
 
 
 class MigrationSummary(BaseModel):

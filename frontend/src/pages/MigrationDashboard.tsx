@@ -11,7 +11,6 @@ import {
   timeRemaining,
   statusLabel,
   statusColor,
-  shortenAddress,
 } from '../lib/utils';
 import {
   Users,
@@ -23,7 +22,7 @@ import {
   Send,
   Zap,
 } from 'lucide-react';
-import type { Migration } from '../types';
+import type { Migration, WalletAllocation } from '../types';
 
 export function MigrationDashboard() {
   const { id } = useParams<{ id: string }>();
@@ -132,8 +131,6 @@ export function MigrationDashboard() {
   }
 
   const isDepositing = migration.status === 'depositing';
-  const isLateClaims = migration.status === 'late_claims';
-
   return (
     <div className="max-w-5xl mx-auto px-6 py-16">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
@@ -315,6 +312,14 @@ export function MigrationDashboard() {
                     <span className="text-blue-400">Top-up Bonus (+10%)</span>
                     <span className="font-mono text-white">
                       {formatNumber(allocation.topup_bonus)}
+                    </span>
+                  </div>
+                )}
+                {allocation.phx_boost > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-amber-400">PHX Holder Boost (+{Math.round(allocation.phx_boost_pct * 100)}%)</span>
+                    <span className="font-mono text-white">
+                      {formatNumber(allocation.phx_boost)}
                     </span>
                   </div>
                 )}

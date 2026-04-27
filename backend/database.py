@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS nft_airdrops (
 CREATE INDEX IF NOT EXISTS idx_nft_airdrops_migration ON nft_airdrops(migration_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_migration ON snapshots(migration_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_wallet ON snapshots(wallet_address);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deposits_tx ON deposits(migration_id, tx_hash);
 CREATE INDEX IF NOT EXISTS idx_deposits_migration ON deposits(migration_id);
 CREATE INDEX IF NOT EXISTS idx_deposits_wallet ON deposits(wallet_address);
 CREATE INDEX IF NOT EXISTS idx_distributions_migration ON distributions(migration_id);

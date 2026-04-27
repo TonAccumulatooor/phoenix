@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
 import { PhoenixLogo } from '../components/PhoenixLogo';
 import {
-  Flame,
   TrendingUp,
   Droplets,
   Shield,
+  Zap,
   ArrowRight,
   ExternalLink,
 } from 'lucide-react';
@@ -24,6 +24,11 @@ const UTILITY = [
     icon: <Shield size={24} />,
     title: 'Fee Payments',
     desc: 'The $25 proposal fee is paid in PHX, creating constant buy pressure.',
+  },
+  {
+    icon: <Zap size={24} />,
+    title: 'Holder Boost',
+    desc: 'Hold 5M+ PHX for a +5% NEWTOKEN bonus on every migration. Hold 10M+ for +10%. Checked at distribution.',
   },
 ];
 
@@ -48,13 +53,17 @@ export function Token() {
         </p>
         <div className="flex justify-center gap-4">
           <a
-            href="#"
+            href="https://groypfi.io/launchpad"
+            target="_blank"
+            rel="noopener noreferrer"
             className="phoenix-button inline-flex items-center gap-2"
           >
             Buy on Groypad <ExternalLink size={16} />
           </a>
           <a
-            href="#"
+            href="https://dedust.io"
+            target="_blank"
+            rel="noopener noreferrer"
             className="phoenix-button-outline inline-flex items-center gap-2"
           >
             Chart on DeDust <ExternalLink size={16} />
