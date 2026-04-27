@@ -27,12 +27,6 @@ from services.nft import snapshot_groyper_nft_holders
 UPLOAD_DIR = Path(__file__).parent.parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-router = APIRouter(
-    prefix="/api/migrations",
-    tags=["agent"],
-    dependencies=[Depends(verify_agent_key)],
-)
-
 
 async def verify_agent_key(x_agent_key: str = Header(...)):
     """Require a valid agent API key on all agent endpoints."""
@@ -41,6 +35,13 @@ async def verify_agent_key(x_agent_key: str = Header(...)):
     if x_agent_key != AGENT_API_KEY:
         raise HTTPException(403, "Invalid agent API key")
     return x_agent_key
+
+
+router = APIRouter(
+    prefix="/api/migrations",
+    tags=["agent"],
+    dependencies=[Depends(verify_agent_key)],
+)
 
 
 # --- Request models ---
