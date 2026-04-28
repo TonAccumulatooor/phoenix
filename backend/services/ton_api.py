@@ -90,16 +90,17 @@ async def get_jetton_holders(
             offset += limit
             if len(addresses) < limit:
                 break
-            await asyncio.sleep(1.1)
+            await asyncio.sleep(0.15)  # TonAPI paid key handles faster
     return holders
 
 
-async def estimate_circulating_supply(jetton_address: str) -> dict:
+async def estimate_circulating_supply(jetton_address: str, info: dict | None = None) -> dict:
     """
     Calculate real circulating supply by fetching holders and excluding
     burn addresses, LP pools, and other contracts using tonapi's is_wallet field.
     """
-    info = await get_jetton_info(jetton_address)
+    if not info:
+        info = await get_jetton_info(jetton_address)
     if not info:
         return {"error": "Could not fetch jetton info"}
 
@@ -295,8 +296,28 @@ async def get_pool_reserves(jetton_address: str) -> dict:
 
 
 async def _fetch_dedust_pool(client: httpx.AsyncClient, jetton_address: str) -> Optional[dict]:
-    resp = await client.get(f"{DEDUST_API}/pools")
+    # Use TonAPI to find the specific DeDust pool instead of downloading all pools
+    resp = await client.get(
+        f"{TON_API_BASE}/jettons/{jetton_address}",
+        headers=_headers(),
+        timeout=15,
+    )
     if resp.status_code != 200:
+        return None
+
+    # Fallback: query DeDust API for specific asset pools
+    try:
+        resp = await client.get(
+            f"https://api.dedust.io/v3/pools",
+            params={"jetton": jetton_address},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            # Try v2 all pools as last resort but with timeout
+            resp = await client.get(f"{DEDUST_API}/pools", timeout=15)
+            if resp.status_code != 200:
+                return None
+    except Exception:
         return None
 
     for pool in resp.json():

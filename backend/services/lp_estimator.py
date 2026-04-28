@@ -6,13 +6,19 @@ async def estimate_extraction(
     jetton_address: str,
     circulating_supply: float,
     deposited_amount: float,
+    pool_data: dict | None = None,
 ) -> dict:
     """
     Estimate TON extraction using actual DEX pool reserves and constant product formula.
     All reserve values are in raw units (with decimals). deposited_amount is in human-readable units.
     """
-    liquidity = await estimate_pool_liquidity(jetton_address)
-    has_liquidity = liquidity.get("has_liquidity", False)
+    if pool_data is not None:
+        # Use pre-fetched pool data
+        has_liquidity = pool_data.get("has_liquidity", False)
+        liquidity = pool_data
+    else:
+        liquidity = await estimate_pool_liquidity(jetton_address)
+        has_liquidity = liquidity.get("has_liquidity", False)
 
     if not has_liquidity:
         return {

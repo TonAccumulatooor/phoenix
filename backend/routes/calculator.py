@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 from fastapi import APIRouter, HTTPException
 from database import get_db
@@ -12,7 +13,7 @@ from services.conversion import (
 )
 from services.lp_estimator import estimate_extraction
 from services.groypad_curve import estimate_dev_buy
-from services.ton_api import get_jetton_info, estimate_circulating_supply, get_phx_balance
+from services.ton_api import get_jetton_info, estimate_circulating_supply, get_pool_reserves, get_phx_balance
 from config import FULL_DEV_BUY_TON, NEW_TOKEN_SUPPLY, THRESHOLD_PERCENT
 
 router = APIRouter(prefix="/api/calculator", tags=["calculator"])
@@ -37,12 +38,16 @@ async def preview_migration(token_address: str):
     total_supply = info["total_supply"] / (10 ** decimals)
     base_ratio = compute_base_ratio(total_supply)
 
-    circ_data = await estimate_circulating_supply(token_address)
+    # Run circulating supply and pool reserves in parallel
+    circ_data, pool_data = await asyncio.gather(
+        estimate_circulating_supply(token_address, info=info),
+        get_pool_reserves(token_address),
+    )
     circulating = circ_data.get("circulating_supply", total_supply * 0.7)
     threshold_amount = circulating * THRESHOLD_PERCENT
 
     lp_est = await estimate_extraction(
-        token_address, circulating, threshold_amount
+        token_address, circulating, threshold_amount, pool_data=pool_data
     )
 
     extracted_ton = lp_est["estimated_extraction_ton"]
