@@ -167,6 +167,7 @@ export function Propose() {
   const [tokenAddress, setTokenAddress] = useState('');
   const [preview, setPreview] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [scanPhrase, setScanPhrase] = useState('');
   const [proposing, setProposing] = useState(false);
   const [error, setError] = useState('');
   const [depositPct, setDepositPct] = useState(51);
@@ -186,6 +187,28 @@ export function Propose() {
   // Groyper NFT fee waiver check
   const [nftHolder, setNftHolder] = useState<{ holds: boolean; count: number } | null>(null);
   const [, setNftChecking] = useState(false);
+
+  // Cycle through scan phrases while loading
+  useEffect(() => {
+    if (!loading) { setScanPhrase(''); return; }
+    const phrases = [
+      'Scanning token contract...',
+      'Fetching holder data...',
+      'Analyzing circulating supply...',
+      'Scouring DEX liquidity pools...',
+      'Calculating extraction estimates...',
+      'Evaluating migration viability...',
+      'Crunching the numbers...',
+      'Almost there...',
+    ];
+    let i = 0;
+    setScanPhrase(phrases[0]);
+    const interval = setInterval(() => {
+      i = Math.min(i + 1, phrases.length - 1);
+      setScanPhrase(phrases[i]);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   useEffect(() => {
     if (!walletAddress) {
@@ -324,6 +347,15 @@ export function Propose() {
               Preview
             </button>
           </div>
+          {loading && scanPhrase && (
+            <div className="mt-3 flex items-center gap-2 text-sm">
+              <span
+                className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+                style={{ background: 'linear-gradient(135deg, #ffd700, #ff6b00)' }}
+              />
+              <span className="text-ash-400 transition-opacity duration-300">{scanPhrase}</span>
+            </div>
+          )}
           {error && (
             <div className="mt-3 flex items-center gap-2 text-pyre text-sm">
               <AlertTriangle size={16} />
