@@ -206,7 +206,7 @@ export function Propose() {
     const interval = setInterval(() => {
       i = Math.min(i + 1, phrases.length - 1);
       setScanPhrase(phrases[i]);
-    }, 2500);
+    }, 750);
     return () => clearInterval(interval);
   }, [loading]);
 
