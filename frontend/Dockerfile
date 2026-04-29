@@ -7,8 +7,9 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
-# Cache-bust: force rebuild on every deploy
-ARG CACHE_BUST=1
+# Railway passes service variables as build args automatically
+ARG VITE_VAULT_ADDRESS
+ENV VITE_VAULT_ADDRESS=$VITE_VAULT_ADDRESS
 RUN npm run build
 
 # Stage 2: Serve
