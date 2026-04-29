@@ -217,7 +217,7 @@ export function MigrationDashboard() {
               <div className="flex justify-between text-sm">
                 <span className="text-ash-400">Base Ratio</span>
                 <span className="font-mono text-white">
-                  1:{parseFloat(migration.base_ratio?.toFixed(6))}
+                  1:{parseFloat((migration.base_ratio ?? 0).toFixed(6))}
                 </span>
               </div>
               <div className="flex justify-between text-sm">

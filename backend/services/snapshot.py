@@ -47,6 +47,8 @@ async def take_snapshot(
         addr = h["wallet_address"]
         raw_balance = h["balance"]
         balance = raw_balance / divisor
+        is_wallet = h.get("is_wallet", True)
+        name = h.get("name")
 
         burn_reason = classify_address(addr)
         if burn_reason:
@@ -54,14 +56,14 @@ async def take_snapshot(
             excluded_balance += balance
             continue
 
-        try:
-            is_contract = await check_is_contract(addr)
-        except Exception:
-            # If we can't check, assume it's a wallet (safer than excluding)
-            is_contract = False
+        if name and "burn" in name.lower():
+            excluded_entries.append((addr, "burn", balance))
+            excluded_balance += balance
+            continue
 
-        if is_contract:
-            excluded_entries.append((addr, "contract", balance))
+        # Use is_wallet from TonAPI holders endpoint (covers LPs, DEX contracts, etc.)
+        if not is_wallet:
+            excluded_entries.append((addr, "contract/lp", balance))
             excluded_balance += balance
             continue
 
