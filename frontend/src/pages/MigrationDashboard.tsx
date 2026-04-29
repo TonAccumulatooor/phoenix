@@ -22,6 +22,10 @@ import {
   Send,
   Zap,
   Clock,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check,
 } from 'lucide-react';
 import type { Migration, WalletAllocation } from '../types';
 
@@ -39,6 +43,14 @@ export function MigrationDashboard() {
   const [walletTokenBalance, setWalletTokenBalance] = useState<number | null>(null);
   const [txStatus, setTxStatus] = useState<{ type: 'deposit' | 'topup'; state: 'sending' | 'success' | 'error'; msg?: string } | null>(null);
   const [countdown, setCountdown] = useState<string | null>(null);
+  const [snapshotData, setSnapshotData] = useState<{
+    holders: { wallet_address: string; snapshot_balance: number; deposited: number; tier: string }[];
+    excluded: { address: string; reason: string; balance: number }[];
+    total_snapshotted: number;
+    total_depositors: number;
+  } | null>(null);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -84,6 +96,8 @@ export function MigrationDashboard() {
     try {
       const data: any = await api.getMigration(id!);
       setMigration(data);
+      // Load snapshot data in background
+      api.getSnapshot(id!).then(setSnapshotData).catch(console.error);
     } catch (e) {
       console.error(e);
     } finally {
@@ -499,6 +513,118 @@ export function MigrationDashboard() {
             )}
           </div>
         </div>
+        {/* Snapshot Table */}
+        {snapshotData && (
+          <div className="phoenix-card mt-6">
+            <button
+              onClick={() => setSnapshotOpen(!snapshotOpen)}
+              className="w-full p-6 flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-3">
+                <Users size={18} className="text-ember-500" />
+                <h2 className="text-lg font-semibold text-white">
+                  Holder Snapshot
+                </h2>
+                <span className="text-sm text-ash-500">
+                  {snapshotData.total_snapshotted} holders
+                  {snapshotData.excluded.length > 0 && ` · ${snapshotData.excluded.length} excluded`}
+                </span>
+              </div>
+              {snapshotOpen ? (
+                <ChevronUp size={20} className="text-ash-400" />
+              ) : (
+                <ChevronDown size={20} className="text-ash-400" />
+              )}
+            </button>
+
+            {snapshotOpen && (
+              <div className="px-6 pb-6">
+                {/* Header */}
+                <div className="grid grid-cols-4 gap-4 text-xs text-ash-500 uppercase tracking-wider pb-3 border-b border-ash-700/50">
+                  <div>Wallet</div>
+                  <div className="text-right">Snapshot Balance</div>
+                  <div className="text-right">Deposited</div>
+                  <div className="text-right">Tier</div>
+                </div>
+
+                {/* Holder rows */}
+                <div className="max-h-[400px] overflow-y-auto">
+                  {snapshotData.holders.map((h) => {
+                    const shortAddr = `${h.wallet_address.slice(0, 6)}...${h.wallet_address.slice(-4)}`;
+                    const tierConfig: Record<string, { label: string; color: string }> = {
+                      'tier1': { label: 'Tier 1 (OG)', color: 'text-emerald-400' },
+                      'tier1+': { label: 'Tier 1+', color: 'text-amber-400' },
+                      'tier2': { label: 'Tier 2', color: 'text-orange-400' },
+                      'og_not_deposited': { label: 'OG', color: 'text-ash-400' },
+                    };
+                    const tier = tierConfig[h.tier] || { label: h.tier, color: 'text-ash-500' };
+
+                    return (
+                      <div
+                        key={h.wallet_address}
+                        className="grid grid-cols-4 gap-4 py-2.5 border-b border-ash-800/30 text-sm items-center hover:bg-white/[0.02] transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-ash-300">{shortAddr}</span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(h.wallet_address);
+                              setCopiedAddr(h.wallet_address);
+                              setTimeout(() => setCopiedAddr(null), 1500);
+                            }}
+                            className="text-ash-600 hover:text-ash-300 transition-colors"
+                          >
+                            {copiedAddr === h.wallet_address ? (
+                              <Check size={12} className="text-emerald-400" />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
+                        </div>
+                        <div className="text-right font-mono text-white">
+                          {formatNumber(h.snapshot_balance)}
+                        </div>
+                        <div className="text-right font-mono text-white">
+                          {h.deposited > 0 ? formatNumber(h.deposited) : '—'}
+                        </div>
+                        <div className={`text-right font-semibold text-xs ${tier.color}`}>
+                          {tier.label}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Excluded addresses */}
+                {snapshotData.excluded.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-ash-700/50">
+                    <h3 className="text-sm font-semibold text-ash-400 mb-2">
+                      Excluded Addresses ({snapshotData.excluded.length})
+                    </h3>
+                    <div className="space-y-1">
+                      {snapshotData.excluded.map((e) => (
+                        <div
+                          key={e.address}
+                          className="flex items-center justify-between text-xs text-ash-500"
+                        >
+                          <span className="font-mono">
+                            {e.address.slice(0, 6)}...{e.address.slice(-4)}
+                          </span>
+                          <div className="flex items-center gap-3">
+                            <span>{formatNumber(e.balance)}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-ash-800/50 text-ash-500">
+                              {e.reason}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </motion.div>
     </div>
   );

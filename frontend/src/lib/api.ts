@@ -118,6 +118,23 @@ export const api = {
       `/calculator/jetton-balance/${jettonMaster}/${ownerWallet}`
     ),
 
+  getSnapshot: (migrationId: string) =>
+    request<{
+      holders: {
+        wallet_address: string;
+        snapshot_balance: number;
+        deposited: number;
+        tier: string;
+      }[];
+      excluded: {
+        address: string;
+        reason: string;
+        balance: number;
+      }[];
+      total_snapshotted: number;
+      total_depositors: number;
+    }>(`/calculator/snapshot/${migrationId}`),
+
   checkNftOwnership: (wallet: string) =>
     request<{
       wallet_address: string;

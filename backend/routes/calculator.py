@@ -204,3 +204,89 @@ async def get_jetton_balance(jetton_master: str, owner_wallet: str):
     raw = int(data.get("balance", 0))
     decimals = int(data.get("jetton", {}).get("decimals", 9))
     return {"balance": raw / (10 ** decimals)}
+
+
+@router.get("/snapshot/{migration_id}")
+async def get_snapshot_with_tiers(migration_id: str):
+    """Return all snapshotted holders with their tier classification and deposit status."""
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT * FROM migrations WHERE id = ?", (migration_id,))
+        migration = await cursor.fetchone()
+        if not migration:
+            raise HTTPException(404, "Migration not found")
+
+        # All snapshotted wallets (OG holders)
+        snap_cursor = await db.execute(
+            "SELECT wallet_address, balance FROM snapshots WHERE migration_id = ? ORDER BY balance DESC",
+            (migration_id,),
+        )
+        snapshots = await snap_cursor.fetchall()
+
+        # All deposits grouped by wallet
+        dep_cursor = await db.execute(
+            """SELECT wallet_address,
+                      COALESCE(SUM(amount), 0) as total_deposited,
+                      COALESCE(SUM(tier1_amount), 0) as tier1,
+                      COALESCE(SUM(tier1plus_amount), 0) as tier1plus,
+                      COALESCE(SUM(tier2_amount), 0) as tier2
+            FROM deposits WHERE migration_id = ?
+            GROUP BY wallet_address""",
+            (migration_id,),
+        )
+        deposits_by_wallet = {}
+        for row in await dep_cursor.fetchall():
+            deposits_by_wallet[row["wallet_address"]] = {
+                "deposited": row["total_deposited"],
+                "tier1": row["tier1"],
+                "tier1plus": row["tier1plus"],
+                "tier2": row["tier2"],
+            }
+
+        # Non-OG depositors (wallets that deposited but aren't in snapshot)
+        og_addrs = {s["wallet_address"] for s in snapshots}
+
+        holders = []
+        for snap in snapshots:
+            addr = snap["wallet_address"]
+            dep = deposits_by_wallet.get(addr)
+            if dep and dep["deposited"] > 0:
+                if dep["tier1plus"] > 0:
+                    tier = "tier1+"
+                else:
+                    tier = "tier1"
+            else:
+                tier = "og_not_deposited"
+            holders.append({
+                "wallet_address": addr,
+                "snapshot_balance": snap["balance"],
+                "deposited": dep["deposited"] if dep else 0,
+                "tier": tier,
+            })
+
+        # Add non-OG depositors
+        for addr, dep in deposits_by_wallet.items():
+            if addr not in og_addrs and dep["deposited"] > 0:
+                holders.append({
+                    "wallet_address": addr,
+                    "snapshot_balance": 0,
+                    "deposited": dep["deposited"],
+                    "tier": "tier2",
+                })
+
+        # Excluded addresses
+        excl_cursor = await db.execute(
+            "SELECT address, reason, balance FROM excluded_addresses WHERE migration_id = ? ORDER BY balance DESC",
+            (migration_id,),
+        )
+        excluded = [
+            {"address": r["address"], "reason": r["reason"], "balance": r["balance"]}
+            for r in await excl_cursor.fetchall()
+        ]
+
+        return {
+            "holders": holders,
+            "excluded": excluded,
+            "total_snapshotted": len(snapshots),
+            "total_depositors": len(deposits_by_wallet),
+        }
