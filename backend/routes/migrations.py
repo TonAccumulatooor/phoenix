@@ -53,28 +53,18 @@ async def propose_migration(req: ProposeRequest):
     now = datetime.now(timezone.utc)
     deposit_deadline = now + timedelta(days=DEPOSIT_WINDOW_DAYS)
 
+    socials_json = json.dumps(req.socials.model_dump(exclude_none=True)) if req.socials else None
+
+    # Validate creator fee wallet if provided
+    creator_fee_wallet = None
+    if req.creator_fee_wallet:
+        if not is_valid_ton_address(req.creator_fee_wallet):
+            raise HTTPException(400, f"Invalid creator fee wallet address: {req.creator_fee_wallet}")
+        creator_fee_wallet = req.creator_fee_wallet
+
     db = await get_db()
     try:
-        snapshot_result = await take_snapshot(db, migration_id, req.old_token_address)
-        circulating = snapshot_result["circulating_supply"]
-        threshold = circulating * THRESHOLD_PERCENT
-        base_ratio = compute_base_ratio(info["total_supply"] / (10 ** info["decimals"]))
-
-        lp_est = await estimate_extraction(
-            req.old_token_address,
-            circulating,
-            circulating * THRESHOLD_PERCENT,
-        )
-
-        socials_json = json.dumps(req.socials.model_dump(exclude_none=True)) if req.socials else None
-
-        # Validate creator fee wallet if provided
-        creator_fee_wallet = None
-        if req.creator_fee_wallet:
-            if not is_valid_ton_address(req.creator_fee_wallet):
-                raise HTTPException(400, f"Invalid creator fee wallet address: {req.creator_fee_wallet}")
-            creator_fee_wallet = req.creator_fee_wallet
-
+        # Insert migration row FIRST so snapshot FK references are valid
         await db.execute(
             """INSERT INTO migrations
             (id, old_token_address, old_token_name, old_token_symbol, old_token_decimals,
@@ -103,13 +93,32 @@ async def propose_migration(req: ProposeRequest):
                 req.proposal_fee_type,
                 now.isoformat(),
                 deposit_deadline.isoformat(),
-                circulating,
-                threshold,
-                base_ratio,
-                lp_est["estimated_extraction_ton"],
+                0,  # circulating_supply placeholder
+                0,  # threshold_amount placeholder
+                0,  # base_ratio placeholder
+                0,  # lp_estimation_ton placeholder
                 now.isoformat(),
                 now.isoformat(),
             ),
+        )
+
+        # Now snapshot can reference the migration_id
+        snapshot_result = await take_snapshot(db, migration_id, req.old_token_address)
+        circulating = snapshot_result["circulating_supply"]
+        threshold = circulating * THRESHOLD_PERCENT
+        base_ratio = compute_base_ratio(info["total_supply"] / (10 ** info["decimals"]))
+
+        lp_est = await estimate_extraction(
+            req.old_token_address,
+            circulating,
+            circulating * THRESHOLD_PERCENT,
+        )
+
+        # Update migration with real computed values
+        await db.execute(
+            """UPDATE migrations SET circulating_supply = ?, threshold_amount = ?,
+               base_ratio = ?, lp_estimation_ton = ? WHERE id = ?""",
+            (circulating, threshold, base_ratio, lp_est["estimated_extraction_ton"], migration_id),
         )
         await db.commit()
 
