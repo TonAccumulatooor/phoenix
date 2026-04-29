@@ -73,11 +73,14 @@ export function useTonTransactions() {
         .storeBit(false)                     // no forward_payload
         .endCell();
 
+      // TonConnect requires user-friendly address format
+      const friendlyJettonWallet = Address.parse(jettonWalletAddress).toString();
+
       const tx = await tonConnectUI.sendTransaction({
         validUntil: Math.floor(Date.now() / 1000) + 300,
         messages: [
           {
-            address: jettonWalletAddress,
+            address: friendlyJettonWallet,
             amount: toNano(JETTON_TRANSFER_GAS_TON).toString(),
             payload: body.toBoc().toString('base64'),
           },
