@@ -290,3 +290,5 @@ async def get_snapshot_with_tiers(migration_id: str):
             "total_snapshotted": len(snapshots),
             "total_depositors": len(deposits_by_wallet),
         }
+    finally:
+        await db.close()

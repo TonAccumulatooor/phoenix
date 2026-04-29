@@ -10,11 +10,10 @@ Runs as a background asyncio task started in FastAPI's lifespan.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import httpx
 
-from datetime import timedelta
 from config import TON_API_BASE, TON_API_KEY, VAULT_WALLET_ADDRESS
 
 QUALIFIED_COUNTDOWN_MINUTES = 60
