@@ -140,9 +140,9 @@ export function Landing() {
               transition={{ duration: 0.6, delay: 0.4 }}
               className="flex flex-wrap gap-4"
             >
-              <span className="phoenix-button flex items-center gap-2 text-lg opacity-50 cursor-not-allowed pointer-events-none">
+              <Link to="/propose" className="phoenix-button flex items-center gap-2 text-lg">
                 Propose Migration <ArrowRight size={20} />
-              </span>
+              </Link>
               <Link to="/migrations" className="phoenix-button-outline flex items-center gap-2">
                 View Active Migrations
               </Link>

@@ -914,7 +914,7 @@ export function Propose() {
               )}
               <button
                 onClick={handlePropose}
-                disabled={true}
+                disabled={!preview || proposing}
                 className="phoenix-button inline-flex items-center gap-2 text-lg px-8 py-4 disabled:opacity-50"
               >
                 {proposing ? (
