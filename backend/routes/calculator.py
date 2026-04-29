@@ -174,17 +174,16 @@ async def get_jetton_wallet_address(jetton_master: str, owner_wallet: str):
         headers["Authorization"] = f"Bearer {TON_API_KEY}"
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
-            f"{TON_API_BASE}/jettons/{jetton_master}/wallets",
-            params={"owner_address": owner_wallet, "limit": 1},
+            f"{TON_API_BASE}/accounts/{owner_wallet}/jettons/{jetton_master}",
             headers=headers,
         )
     if resp.status_code != 200:
         raise HTTPException(400, "Could not fetch jetton wallet address")
     data = resp.json()
-    wallets = data.get("addresses", [])
-    if not wallets:
+    wallet_addr = data.get("wallet_address", {}).get("address", "")
+    if not wallet_addr:
         raise HTTPException(404, "No jetton wallet found for this owner")
-    return {"jetton_wallet_address": wallets[0].get("address", "")}
+    return {"jetton_wallet_address": wallet_addr}
 
 
 @router.get("/jetton-balance/{jetton_master}/{owner_wallet}")
