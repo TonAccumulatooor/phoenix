@@ -114,6 +114,32 @@ export function MigrationDashboard() {
     }
   }
 
+  // Poll for data updates after a transaction until values change
+  function pollForUpdates(prevDeposited: number) {
+    let attempts = 0;
+    const maxAttempts = 24; // 2 minutes at 5s intervals
+    const interval = setInterval(async () => {
+      attempts++;
+      try {
+        const data: any = await api.getMigration(id!);
+        const newDeposited = data.total_deposited ?? 0;
+        if (newDeposited !== prevDeposited || attempts >= maxAttempts) {
+          clearInterval(interval);
+          setMigration(data);
+          api.getSnapshot(id!).then(setSnapshotData).catch(console.error);
+          if (walletAddress) {
+            loadAllocation();
+            api.getJettonBalance(data.old_token.address, walletAddress)
+              .then(({ balance }) => setWalletTokenBalance(balance))
+              .catch(() => {});
+          }
+        }
+      } catch {
+        if (attempts >= maxAttempts) clearInterval(interval);
+      }
+    }, 5000);
+  }
+
   async function handleDeposit() {
     if (!migration || !walletAddress || !depositAmount) return;
     const amount = parseFloat(depositAmount);
@@ -121,6 +147,7 @@ export function MigrationDashboard() {
 
     setTxStatus({ type: 'deposit', state: 'sending' });
     try {
+      const prevDeposited = migration.total_deposited ?? 0;
       // Fetch the user's jetton wallet address for this token
       const { jetton_wallet_address } = await api.getJettonWalletAddress(
         migration.old_token.address,
@@ -135,7 +162,7 @@ export function MigrationDashboard() {
       if (result.success) {
         setTxStatus({ type: 'deposit', state: 'success' });
         setDepositAmount('');
-        setTimeout(() => { loadMigration(); loadAllocation(); }, 3000);
+        pollForUpdates(prevDeposited);
       } else {
         setTxStatus({ type: 'deposit', state: 'error', msg: result.error });
       }
@@ -150,11 +177,12 @@ export function MigrationDashboard() {
     if (isNaN(amount) || amount <= 0) return;
 
     setTxStatus({ type: 'topup', state: 'sending' });
+    const prevDeposited = migration.total_deposited ?? 0;
     const result = await sendTonTopup(amount, migration.id);
     if (result.success) {
       setTxStatus({ type: 'topup', state: 'success' });
       setTopupAmount('');
-      setTimeout(() => { loadMigration(); loadAllocation(); }, 3000);
+      pollForUpdates(prevDeposited);
     } else {
       setTxStatus({ type: 'topup', state: 'error', msg: result.error });
     }
