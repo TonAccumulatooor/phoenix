@@ -35,6 +35,7 @@ export function MigrationDashboard() {
   const [loading, setLoading] = useState(true);
   const [depositAmount, setDepositAmount] = useState('');
   const [topupAmount, setTopupAmount] = useState('');
+  const [walletTokenBalance, setWalletTokenBalance] = useState<number | null>(null);
   const [txStatus, setTxStatus] = useState<{ type: 'deposit' | 'topup'; state: 'sending' | 'success' | 'error'; msg?: string } | null>(null);
 
   useEffect(() => {
@@ -46,6 +47,13 @@ export function MigrationDashboard() {
     if (!id || !walletAddress) return;
     loadAllocation();
   }, [id, walletAddress]);
+
+  useEffect(() => {
+    if (!migration || !walletAddress) return;
+    api.getJettonBalance(migration.old_token.address, walletAddress)
+      .then(({ balance }) => setWalletTokenBalance(balance))
+      .catch(() => setWalletTokenBalance(null));
+  }, [migration?.old_token?.address, walletAddress]);
 
   async function loadMigration() {
     try {
@@ -147,7 +155,7 @@ export function MigrationDashboard() {
               </span>
             </div>
             <p className="text-ash-400">
-              {migration.old_token.name} — Migration {migration.id}
+              {migration.old_token.name}
             </p>
           </div>
           <div
@@ -209,7 +217,7 @@ export function MigrationDashboard() {
               <div className="flex justify-between text-sm">
                 <span className="text-ash-400">Base Ratio</span>
                 <span className="font-mono text-white">
-                  1:{migration.base_ratio?.toFixed(4)}
+                  1:{parseFloat(migration.base_ratio?.toFixed(6))}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -350,15 +358,31 @@ export function MigrationDashboard() {
                       <ArrowDown size={14} />
                       Deposit {migration.old_token.symbol} into the vault
                     </div>
+                    {walletTokenBalance !== null && walletTokenBalance > 0 && (
+                      <div className="text-xs text-ash-500 mb-1">
+                        Wallet balance: {formatNumber(walletTokenBalance)} {migration.old_token.symbol}
+                      </div>
+                    )}
                     <div className="flex gap-2">
-                      <input
-                        type="number"
-                        value={depositAmount}
-                        onChange={(e) => setDepositAmount(e.target.value)}
-                        placeholder={`${migration.old_token.symbol} amount`}
-                        className="phoenix-input text-sm flex-1"
-                        min="0"
-                      />
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          value={depositAmount}
+                          onChange={(e) => setDepositAmount(e.target.value)}
+                          placeholder={`${migration.old_token.symbol} amount`}
+                          className="phoenix-input text-sm w-full pr-14"
+                          min="0"
+                        />
+                        {walletTokenBalance !== null && walletTokenBalance > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDepositAmount(String(walletTokenBalance))}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-ember-400 hover:text-ember-300 transition-colors"
+                          >
+                            MAX
+                          </button>
+                        )}
+                      </div>
                       <button
                         onClick={handleDeposit}
                         disabled={txStatus?.type === 'deposit' && txStatus.state === 'sending'}

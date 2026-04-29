@@ -127,7 +127,7 @@ async def propose_migration(req: ProposeRequest):
             "old_token": {
                 "name": info["name"],
                 "symbol": info["symbol"],
-                "total_supply": info["total_supply"],
+                "total_supply": info["total_supply"] / (10 ** info["decimals"]),
             },
             "circulating_supply": circulating,
             "threshold_amount": threshold,
@@ -164,13 +164,16 @@ async def get_migration(migration_id: str):
         )
         depositor_count = (await depositor_cursor.fetchone())["cnt"]
 
+        decimals = row["old_token_decimals"] or 9
+        human_supply = row["old_token_total_supply"] / (10 ** decimals)
+
         return {
             "id": row["id"],
             "old_token": {
                 "address": row["old_token_address"],
                 "name": row["old_token_name"],
                 "symbol": row["old_token_symbol"],
-                "total_supply": row["old_token_total_supply"],
+                "total_supply": human_supply,
             },
             "new_token": {
                 "address": row["new_token_address"],

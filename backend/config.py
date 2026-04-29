@@ -1,5 +1,6 @@
 import os
 import re
+import base64
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -31,6 +32,26 @@ TON_ADDRESS_RE = re.compile(
 
 def is_valid_ton_address(addr: str) -> bool:
     return bool(TON_ADDRESS_RE.match(addr))
+
+
+def normalize_address(addr: str) -> str:
+    """Convert any TON address format to raw format (0:hex64).
+    If already raw, return as-is."""
+    if addr.startswith("0:") or addr.startswith("-1:"):
+        return addr
+    try:
+        # User-friendly addresses are base64url-encoded, 48 chars
+        # Decode: 2 bytes flags+workchain, 32 bytes hash, 2 bytes CRC
+        padded = addr.replace("-", "+").replace("_", "/")
+        while len(padded) % 4:
+            padded += "="
+        raw_bytes = base64.b64decode(padded)
+        # byte 0: flags, byte 1: workchain (signed), bytes 2-33: hash
+        workchain = int.from_bytes(raw_bytes[1:2], "big", signed=True)
+        addr_hash = raw_bytes[2:34].hex()
+        return f"{workchain}:{addr_hash}"
+    except Exception:
+        return addr
 
 DEPOSIT_WINDOW_DAYS = 14
 LATE_CLAIM_WINDOW_DAYS = 30

@@ -113,6 +113,11 @@ export const api = {
       `/calculator/jetton-wallet/${jettonMaster}/${ownerWallet}`
     ),
 
+  getJettonBalance: (jettonMaster: string, ownerWallet: string) =>
+    request<{ balance: number }>(
+      `/calculator/jetton-balance/${jettonMaster}/${ownerWallet}`
+    ),
+
   checkNftOwnership: (wallet: string) =>
     request<{
       wallet_address: string;

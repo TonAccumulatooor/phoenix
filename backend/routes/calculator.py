@@ -14,7 +14,7 @@ from services.conversion import (
 from services.lp_estimator import estimate_extraction
 from services.groypad_curve import estimate_dev_buy
 from services.ton_api import get_jetton_info, estimate_circulating_supply, get_pool_reserves, get_phx_balance
-from config import FULL_DEV_BUY_TON, NEW_TOKEN_SUPPLY, THRESHOLD_PERCENT
+from config import FULL_DEV_BUY_TON, NEW_TOKEN_SUPPLY, THRESHOLD_PERCENT, normalize_address
 
 router = APIRouter(prefix="/api/calculator", tags=["calculator"])
 
@@ -83,6 +83,7 @@ async def preview_migration(token_address: str):
 @router.get("/allocation/{migration_id}/{wallet_address}")
 async def calculate_wallet_allocation(migration_id: str, wallet_address: str):
     """Calculate exact allocation for a wallet in a specific migration."""
+    raw_addr = normalize_address(wallet_address)
     db = await get_db()
     try:
         cursor = await db.execute("SELECT * FROM migrations WHERE id = ?", (migration_id,))
@@ -92,7 +93,7 @@ async def calculate_wallet_allocation(migration_id: str, wallet_address: str):
 
         snap_cursor = await db.execute(
             "SELECT balance FROM snapshots WHERE migration_id = ? AND wallet_address = ?",
-            (migration_id, wallet_address),
+            (migration_id, raw_addr),
         )
         snap = await snap_cursor.fetchone()
         snapshot_balance = snap["balance"] if snap else 0
@@ -103,13 +104,13 @@ async def calculate_wallet_allocation(migration_id: str, wallet_address: str):
                       COALESCE(SUM(tier1plus_amount), 0) as t1p,
                       COALESCE(SUM(tier2_amount), 0) as t2
             FROM deposits WHERE migration_id = ? AND wallet_address = ?""",
-            (migration_id, wallet_address),
+            (migration_id, raw_addr),
         )
         dep = await dep_cursor.fetchone()
 
         topup_cursor = await db.execute(
             "SELECT COALESCE(SUM(ton_amount), 0) as total FROM topups WHERE migration_id = ? AND wallet_address = ?",
-            (migration_id, wallet_address),
+            (migration_id, raw_addr),
         )
         topup = await topup_cursor.fetchone()
         has_topup = topup["total"] > 0
@@ -184,3 +185,22 @@ async def get_jetton_wallet_address(jetton_master: str, owner_wallet: str):
     if not wallets:
         raise HTTPException(404, "No jetton wallet found for this owner")
     return {"jetton_wallet_address": wallets[0].get("address", "")}
+
+
+@router.get("/jetton-balance/{jetton_master}/{owner_wallet}")
+async def get_jetton_balance(jetton_master: str, owner_wallet: str):
+    """Return the human-readable jetton balance for a wallet."""
+    headers = {"Accept": "application/json"}
+    if TON_API_KEY:
+        headers["Authorization"] = f"Bearer {TON_API_KEY}"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            f"{TON_API_BASE}/accounts/{owner_wallet}/jettons/{jetton_master}",
+            headers=headers,
+        )
+    if resp.status_code != 200:
+        return {"balance": 0}
+    data = resp.json()
+    raw = int(data.get("balance", 0))
+    decimals = int(data.get("jetton", {}).get("decimals", 9))
+    return {"balance": raw / (10 ** decimals)}

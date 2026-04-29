@@ -12,6 +12,7 @@ from services.conversion import (
 )
 from services.snapshot import get_snapshot_balance
 from services.ton_api import verify_jetton_transfer, get_phx_balance
+from config import normalize_address
 
 logger = logging.getLogger("deposits")
 
@@ -163,10 +164,11 @@ async def submit_late_claim(record: LateClaimRecord):
 
 @router.get("/{migration_id}/wallet/{wallet_address}")
 async def get_wallet_deposits(migration_id: str, wallet_address: str):
+    raw_addr = normalize_address(wallet_address)
     db = await get_db()
     try:
-        summary = await get_deposit_summary(db, migration_id, wallet_address)
-        snapshot_bal = await get_snapshot_balance(db, migration_id, wallet_address)
+        summary = await get_deposit_summary(db, migration_id, raw_addr)
+        snapshot_bal = await get_snapshot_balance(db, migration_id, raw_addr)
 
         cursor = await db.execute(
             "SELECT base_ratio FROM migrations WHERE id = ?", (migration_id,)
