@@ -7,6 +7,8 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+# Cache-bust: force rebuild on every deploy
+ARG CACHE_BUST=1
 RUN npm run build
 
 # Stage 2: Serve

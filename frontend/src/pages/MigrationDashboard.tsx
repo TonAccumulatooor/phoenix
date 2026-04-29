@@ -223,7 +223,7 @@ export function MigrationDashboard() {
               <div className="flex justify-between text-sm">
                 <span className="text-ash-400">Old Supply</span>
                 <span className="font-mono text-white">
-                  {formatNumber(migration.old_token.total_supply)}
+                  {Math.round(migration.old_token.total_supply).toLocaleString()}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
@@ -332,7 +332,7 @@ export function MigrationDashboard() {
                   </div>
                 )}
                 <div className="border-t border-ash-700/50 pt-3 flex justify-between">
-                  <span className="text-white font-semibold">Total NEWMEME</span>
+                  <span className="text-white font-semibold">Total New {migration.old_token.symbol}</span>
                   <span className="font-mono text-lg font-bold phoenix-gradient-text">
                     {formatNumber(allocation.newmeme_total)}
                   </span>
