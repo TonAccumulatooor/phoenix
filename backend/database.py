@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS migrations (
     creator_reward_wallet TEXT,
     creator_fee_wallet TEXT,
     lp_estimation_ton REAL,
+    qualified_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -162,5 +163,10 @@ async def get_db() -> aiosqlite.Connection:
 async def init_db():
     db = await get_db()
     await db.executescript(SCHEMA)
+    # Schema migrations for existing DBs
+    try:
+        await db.execute("ALTER TABLE migrations ADD COLUMN qualified_at TEXT")
+    except Exception:
+        pass  # column already exists
     await db.commit()
     await db.close()

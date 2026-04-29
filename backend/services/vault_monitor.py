@@ -14,7 +14,10 @@ from datetime import datetime, timezone
 
 import httpx
 
+from datetime import timedelta
 from config import TON_API_BASE, TON_API_KEY, VAULT_WALLET_ADDRESS
+
+QUALIFIED_COUNTDOWN_MINUTES = 60
 from database import get_db
 from models import MigrationStatus
 from services.vault import process_deposit, check_threshold
@@ -186,18 +189,47 @@ async def _process_event(db, transfer: dict, migration: dict) -> None:
 
     threshold = await check_threshold(db, migration["id"])
     if threshold["qualified"] and migration["status"] == MigrationStatus.DEPOSITING.value:
+        now = datetime.now(timezone.utc).isoformat()
         await db.execute(
-            "UPDATE migrations SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE migrations SET status = ?, qualified_at = ?, updated_at = ? WHERE id = ?",
             (
                 MigrationStatus.QUALIFIED.value,
-                datetime.now(timezone.utc).isoformat(),
+                now,
+                now,
                 migration["id"],
             ),
         )
         await db.commit()
         logger.info(
-            f"[QUALIFIED] migration={migration['id']} reached 51% threshold — status → qualified"
+            f"[QUALIFIED] migration={migration['id']} reached 51% threshold — "
+            f"status → qualified, 60-min countdown started"
         )
+
+
+async def _check_qualified_countdown(db) -> None:
+    """Check if any qualified migrations have passed the 60-min countdown."""
+    cursor = await db.execute(
+        "SELECT id, qualified_at FROM migrations WHERE status = ?",
+        (MigrationStatus.QUALIFIED.value,),
+    )
+    rows = await cursor.fetchall()
+    now = datetime.now(timezone.utc)
+
+    for row in rows:
+        qualified_at = row["qualified_at"]
+        if not qualified_at:
+            continue
+        elapsed = now - datetime.fromisoformat(qualified_at)
+        if elapsed >= timedelta(minutes=QUALIFIED_COUNTDOWN_MINUTES):
+            await db.execute(
+                "UPDATE migrations SET status = ?, updated_at = ? WHERE id = ?",
+                (MigrationStatus.SELLING.value, now.isoformat(), row["id"]),
+            )
+            await db.commit()
+            logger.info(
+                f"[COUNTDOWN COMPLETE] migration={row['id']} — 60-min countdown elapsed, "
+                f"status → selling. Agent should begin execution."
+            )
 
 
 async def _poll_once() -> None:
@@ -208,6 +240,9 @@ async def _poll_once() -> None:
 
     db = await get_db()
     try:
+        # Check if any qualified migrations are ready to proceed
+        await _check_qualified_countdown(db)
+
         # Load persisted state on first run
         await _load_last_lt(db)
 

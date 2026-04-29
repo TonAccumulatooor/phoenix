@@ -21,6 +21,7 @@ export interface Migration {
   base_ratio: number | null;
   deposit_deadline: string;
   late_claim_deadline: string | null;
+  qualified_at: string | null;
   lp_estimation_ton: number | null;
   extracted_ton: number | null;
   dev_buy_ton: number | null;

@@ -21,6 +21,7 @@ import {
   CheckCircle,
   Send,
   Zap,
+  Clock,
 } from 'lucide-react';
 import type { Migration, WalletAllocation } from '../types';
 
@@ -37,6 +38,7 @@ export function MigrationDashboard() {
   const [topupAmount, setTopupAmount] = useState('');
   const [walletTokenBalance, setWalletTokenBalance] = useState<number | null>(null);
   const [txStatus, setTxStatus] = useState<{ type: 'deposit' | 'topup'; state: 'sending' | 'success' | 'error'; msg?: string } | null>(null);
+  const [countdown, setCountdown] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -54,6 +56,29 @@ export function MigrationDashboard() {
       .then(({ balance }) => setWalletTokenBalance(balance))
       .catch(() => setWalletTokenBalance(null));
   }, [migration?.old_token?.address, walletAddress]);
+
+  // 60-minute countdown timer for qualified migrations
+  useEffect(() => {
+    if (!migration || migration.status !== 'qualified' || !migration.qualified_at) {
+      setCountdown(null);
+      return;
+    }
+    function tick() {
+      const qualifiedMs = new Date(migration!.qualified_at!).getTime();
+      const deadline = qualifiedMs + 60 * 60 * 1000; // 60 minutes
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        setCountdown('Migration starting...');
+        return;
+      }
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      setCountdown(`${mins}m ${secs.toString().padStart(2, '0')}s`);
+    }
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [migration?.status, migration?.qualified_at]);
 
   async function loadMigration() {
     try {
@@ -205,6 +230,27 @@ export function MigrationDashboard() {
             </div>
           </div>
         </div>
+
+        {/* Qualified countdown banner */}
+        {migration.status === 'qualified' && countdown && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="phoenix-card-glow p-6 mb-6 text-center border border-gold/30"
+          >
+            <div className="flex items-center justify-center gap-3 mb-2">
+              <Clock size={24} className="text-gold" />
+              <h3 className="text-xl font-bold text-gold">Threshold Reached!</h3>
+            </div>
+            <p className="text-ash-300 text-sm mb-4">
+              51% deposit threshold has been met. Migration will begin automatically when the countdown ends.
+              Deposits are still accepted during this window.
+            </p>
+            <div className="text-4xl font-mono font-bold phoenix-gradient-text">
+              {countdown}
+            </div>
+          </motion.div>
+        )}
 
         <div className="grid md:grid-cols-2 gap-6">
           {/* Migration Details */}

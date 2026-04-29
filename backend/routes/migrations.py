@@ -201,6 +201,7 @@ async def get_migration(migration_id: str):
             "creator_fee_wallet": row["creator_fee_wallet"],
             "holder_count": holder_count,
             "depositor_count": depositor_count,
+            "qualified_at": row["qualified_at"],
             "created_at": row["created_at"],
         }
     finally:
