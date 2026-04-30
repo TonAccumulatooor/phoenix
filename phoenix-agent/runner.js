@@ -564,6 +564,7 @@ async function executeMigration(migrationId) {
     if (result.steps) {
       log.error(`Steps completed: ${result.steps.map(s => `${s.step}:${s.status}`).join(', ')}`);
     }
+    throw new Error(`Failed at ${result.error}`);
   }
 
   return result;
@@ -583,6 +584,9 @@ async function main() {
   }
   if (!AGENT_KEY) {
     log.warn('PHOENIX_AGENT_API_KEY not set — agent endpoints will be unauthenticated');
+  }
+  if (!TONCENTER_KEY) {
+    log.error('⚠ TONCENTER_API_KEY not set — TonCenter will rate-limit all RPC calls (429). Get a free key at toncenter.com');
   }
 
   // Initialize wallet
