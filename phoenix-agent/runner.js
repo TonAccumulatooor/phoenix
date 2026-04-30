@@ -85,9 +85,16 @@ async function initWallet() {
 
   log.info(`Agent wallet: ${walletAddress.toString()}`);
 
-  // Check balance
-  const balance = await client.getBalance(walletAddress);
-  log.info(`Wallet balance: ${Number(balance) / 1e9} TON`);
+  // Check balance (non-fatal — don't crash if TonCenter key is bad)
+  try {
+    const balance = await client.getBalance(walletAddress);
+    log.info(`Wallet balance: ${Number(balance) / 1e9} TON`);
+  } catch (e) {
+    log.warn(`Could not fetch wallet balance: ${e.message}`);
+    if (e.message.includes('401')) {
+      log.error('TONCENTER_API_KEY appears invalid — check the key in Railway variables');
+    }
+  }
 }
 
 // ── Jetton wallet address lookup ─────────────────────────────────────────────
