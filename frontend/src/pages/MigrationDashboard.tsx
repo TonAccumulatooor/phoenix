@@ -242,7 +242,7 @@ export function MigrationDashboard() {
         <div className="phoenix-card-glow p-6 mb-6">
           <ProgressBar
             percent={migration.progress_percent}
-            label="Vault Deposit Progress — 51% required"
+            label="Vault Deposit Progress — 51% of Circulating Supply required"
             size="lg"
             remaining={Math.max(0, (migration.threshold_amount || 0) - (migration.total_deposited || 0))}
             symbol={migration.old_token?.symbol ?? undefined}
