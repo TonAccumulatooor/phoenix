@@ -17,7 +17,7 @@
  *   TON_RPC_URL              — TonCenter JSON-RPC endpoint
  */
 
-import { TonClient, WalletContractV4, internal, toNano, beginCell, Address } from '@ton/ton';
+import { TonClient, WalletContractV5R1, internal, toNano, beginCell, Address, SendMode } from '@ton/ton';
 import { mnemonicToPrivateKey } from '@ton/crypto';
 import {
   Factory,
@@ -72,7 +72,7 @@ async function initWallet() {
 
   client = new TonClient({ endpoint: TON_RPC_URL, apiKey: TONCENTER_KEY || undefined });
 
-  const walletContract = WalletContractV4.create({
+  const walletContract = WalletContractV5R1.create({
     workchain: 0,
     publicKey: keyPair.publicKey,
   });
@@ -119,6 +119,7 @@ async function sendTON(toAddress, amountTon, payloadBase64) {
   await wallet.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
+    sendMode: SendMode.PAY_GAS_SEPARATELY,
     messages: [
       internal({
         to: typeof toAddress === 'string' ? Address.parse(toAddress) : toAddress,
@@ -161,6 +162,7 @@ async function transferJetton(jettonMaster, destAddress, amount) {
   await wallet.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
+    sendMode: SendMode.PAY_GAS_SEPARATELY,
     messages: [
       internal({
         to: agentJettonWallet,
@@ -209,6 +211,7 @@ async function sendJettonTransfer({ jettonMaster, to, amount, forwardPayload, fo
   await wallet.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
+    sendMode: SendMode.PAY_GAS_SEPARATELY,
     messages: [
       internal({
         to: agentJettonWallet,
@@ -341,6 +344,7 @@ async function swapViaDedust(fromToken, toToken, amount, minOut, quote) {
   await wallet.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
+    sendMode: SendMode.PAY_GAS_SEPARATELY,
     messages: [internal({ to: agentJettonWallet, value: toNano('0.35'), body })],
   });
 
@@ -376,6 +380,7 @@ async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
   await wallet.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
+    sendMode: SendMode.PAY_GAS_SEPARATELY,
     messages: [
       internal({
         to: txParams.to.toString(),
@@ -422,6 +427,7 @@ function buildSdk() {
           await wallet.sendTransfer({
             seqno,
             secretKey: keyPair.secretKey,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
             messages: [
               internal({
                 to: args.to,
