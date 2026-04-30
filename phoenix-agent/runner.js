@@ -43,9 +43,9 @@ const POLL_INTERVAL   = 30_000; // 30 seconds
 
 // Track migrations currently being executed to prevent double-runs
 const _executing = new Set();
-// Cooldown after failures — wait 5 minutes before retrying a failed migration
+// Cooldown after failures — wait 60s before retrying a failed migration
 const _failedCooldowns = new Map(); // migrationId → timestamp when retry is allowed
-const FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
+const FAILURE_COOLDOWN_MS = 60 * 1000;
 
 // ── Logger ───────────────────────────────────────────────────────────────────
 
@@ -537,7 +537,7 @@ async function pollForSellingMigrations() {
       }).catch((err) => {
         log.error(`Migration ${mig.id} pipeline failed: ${err.message}`);
         _failedCooldowns.set(mig.id, Date.now() + FAILURE_COOLDOWN_MS);
-        log.info(`Migration ${mig.id} on 5-minute cooldown before retry`);
+        log.info(`Migration ${mig.id} on 60s cooldown before retry`);
       }).finally(() => {
         _executing.delete(mig.id);
       });
