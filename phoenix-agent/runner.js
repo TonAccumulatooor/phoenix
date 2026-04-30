@@ -279,7 +279,8 @@ async function getSwapQuote(fromToken, toToken, amount) {
     );
 
     // getSwapJettonToTonTxParams will throw if no pool exists
-    const txParams = await router.getSwapJettonToTonTxParams(client, {
+    // provider is injected by client.open() — do NOT pass client as first arg
+    const txParams = await router.getSwapJettonToTonTxParams({
       userWalletAddress: userAddr,
       offerJettonAddress,
       offerJettonWalletAddress: AddressCore.parse(offerJettonWalletAddr.toString()),
@@ -393,7 +394,8 @@ async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
     walletAddress,
   );
 
-  const txParams = await router.getSwapJettonToTonTxParams(client, {
+  // provider is injected by client.open() — do NOT pass client as first arg
+  const txParams = await router.getSwapJettonToTonTxParams({
     userWalletAddress: userAddr,
     offerJettonAddress,
     offerJettonWalletAddress: AddressCore.parse(offerJettonWalletAddress.toString()),
