@@ -232,6 +232,29 @@ async def _check_qualified_countdown(db) -> None:
             )
 
 
+async def _check_depositing_thresholds(db) -> None:
+    """Check if any depositing migrations have crossed 51% and should transition to qualified."""
+    cursor = await db.execute(
+        "SELECT id, total_deposited, threshold_amount FROM migrations WHERE status = ?",
+        (MigrationStatus.DEPOSITING.value,),
+    )
+    rows = await cursor.fetchall()
+    for row in rows:
+        total = row["total_deposited"] or 0
+        threshold = row["threshold_amount"] or 0
+        if threshold > 0 and total >= threshold:
+            now = datetime.now(timezone.utc).isoformat()
+            await db.execute(
+                "UPDATE migrations SET status = ?, qualified_at = ?, updated_at = ? WHERE id = ?",
+                (MigrationStatus.QUALIFIED.value, now, now, row["id"]),
+            )
+            await db.commit()
+            logger.info(
+                f"[QUALIFIED] migration={row['id']} reached threshold "
+                f"({total}/{threshold}) — status → qualified, 60-min countdown started"
+            )
+
+
 async def _poll_once() -> None:
     """One poll cycle: fetch new events, match to migrations, record deposits."""
     if not VAULT_WALLET_ADDRESS:
@@ -242,6 +265,10 @@ async def _poll_once() -> None:
     try:
         # Check if any qualified migrations are ready to proceed
         await _check_qualified_countdown(db)
+
+        # Check if any depositing migrations have crossed the threshold
+        # (handles deposits recorded by the frontend API that bypassed the monitor)
+        await _check_depositing_thresholds(db)
 
         # Load persisted state on first run
         await _load_last_lt(db)
