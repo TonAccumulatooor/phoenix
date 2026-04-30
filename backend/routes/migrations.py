@@ -1,14 +1,14 @@
 import json
 import uuid
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from database import get_db
 from models import ProposeRequest, MigrationStatus
 from services.ton_api import get_jetton_info
 from services.snapshot import take_snapshot
 from services.lp_estimator import estimate_extraction
 from services.conversion import compute_base_ratio
-from config import DEPOSIT_WINDOW_DAYS, LATE_CLAIM_WINDOW_DAYS, THRESHOLD_PERCENT, is_valid_ton_address
+from config import DEPOSIT_WINDOW_DAYS, LATE_CLAIM_WINDOW_DAYS, THRESHOLD_PERCENT, is_valid_ton_address, AGENT_API_KEY
 from services.nft import check_groyper_nft_holder
 
 router = APIRouter(prefix="/api/migrations", tags=["migrations"])
@@ -251,7 +251,9 @@ async def list_migrations(status: str = None, limit: int = 50, offset: int = 0):
 
 
 @router.post("/{migration_id}/status")
-async def update_migration_status(migration_id: str, new_status: str):
+async def update_migration_status(migration_id: str, new_status: str, x_agent_key: str = Header(None)):
+    if not AGENT_API_KEY or x_agent_key != AGENT_API_KEY:
+        raise HTTPException(403, "Invalid or missing agent API key")
     valid = [s.value for s in MigrationStatus]
     if new_status not in valid:
         raise HTTPException(400, f"Invalid status. Must be one of: {valid}")

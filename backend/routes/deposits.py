@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from database import get_db
 from models import DepositRecord, TopupRecord, LateClaimRecord, MigrationStatus
-from config import VAULT_WALLET_ADDRESS
+from config import VAULT_WALLET_ADDRESS, AGENT_API_KEY
 from services.vault import process_deposit, process_topup, check_threshold, get_deposit_summary
 from services.conversion import (
     calculate_allocation,
@@ -229,5 +229,24 @@ async def get_all_deposits(migration_id: str):
             ],
             "total_depositors": len(rows),
         }
+    finally:
+        await db.close()
+
+
+@router.post("/admin/reset-monitor")
+async def reset_vault_monitor(x_agent_key: str = Header(None)):
+    """Reset the vault monitor's last_lt so it re-scans all events."""
+    if not AGENT_API_KEY or x_agent_key != AGENT_API_KEY:
+        raise HTTPException(403, "Invalid or missing agent API key")
+
+    from services.vault_monitor import _last_lt
+    db = await get_db()
+    try:
+        await db.execute(
+            "DELETE FROM monitor_state WHERE key LIKE 'last_lt:%'"
+        )
+        await db.commit()
+        _last_lt.clear()
+        return {"status": "ok", "message": "Monitor state reset — will re-scan on next poll"}
     finally:
         await db.close()

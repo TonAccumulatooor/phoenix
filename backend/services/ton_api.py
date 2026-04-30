@@ -1,7 +1,7 @@
 import httpx
 import asyncio
 from typing import Optional
-from config import TON_API_BASE, TON_API_KEY, KNOWN_BURN_ADDRESSES, PHOENIX_TOKEN_ADDRESS
+from config import TON_API_BASE, TON_API_KEY, KNOWN_BURN_ADDRESSES, PHOENIX_TOKEN_ADDRESS, normalize_address
 
 
 def _headers() -> dict:
@@ -240,9 +240,10 @@ async def verify_jetton_transfer(
         raw_amount = int(details.get("amount", 0))
         amount = raw_amount / (10 ** expected_decimals)
 
-        if recipient.lower() != expected_recipient.lower():
+        # TonAPI returns raw format; expected values may be user-friendly
+        if normalize_address(recipient) != normalize_address(expected_recipient):
             continue
-        if jetton_addr.lower() != expected_jetton.lower():
+        if normalize_address(jetton_addr) != normalize_address(expected_jetton):
             continue
         if amount < expected_min_amount * 0.99:  # 1% tolerance for rounding
             continue

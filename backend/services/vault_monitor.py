@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 
 import httpx
 
-from config import TON_API_BASE, TON_API_KEY, VAULT_WALLET_ADDRESS
+from config import TON_API_BASE, TON_API_KEY, VAULT_WALLET_ADDRESS, normalize_address
 
 QUALIFIED_COUNTDOWN_MINUTES = 60
 from database import get_db
@@ -112,7 +112,8 @@ def _extract_jetton_transfer(event: dict) -> dict | None:
         recipient = details.get("recipient", {}).get("address", "")
 
         # Only care about transfers TO our vault
-        if recipient.lower() != VAULT_WALLET_ADDRESS.lower():
+        # TonAPI returns raw format (0:hex), config may store user-friendly (EQ..)
+        if normalize_address(recipient) != normalize_address(VAULT_WALLET_ADDRESS):
             continue
 
         sender = details.get("sender", {}).get("address", "")
@@ -257,8 +258,9 @@ async def _poll_once() -> None:
         max_lt = after_lt
 
         migrations = await _get_active_migrations(db)
-        # Build lookup: jetton_address (lower) → migration
-        jetton_map = {m["old_token_address"].lower(): m for m in migrations}
+        # Build lookup: normalized jetton_address → migration
+        # normalize_address ensures we match regardless of user-friendly vs raw format
+        jetton_map = {normalize_address(m["old_token_address"]): m for m in migrations}
 
         for event in events:
             lt = event.get("lt", 0)
@@ -266,8 +268,8 @@ async def _poll_once() -> None:
                 continue  # already processed
 
             transfer = _extract_jetton_transfer(event)
-            if transfer and transfer["jetton_address"].lower() in jetton_map:
-                migration = jetton_map[transfer["jetton_address"].lower()]
+            if transfer and normalize_address(transfer["jetton_address"]) in jetton_map:
+                migration = jetton_map[normalize_address(transfer["jetton_address"])]
                 await _process_event(db, transfer, migration)
 
             if lt > max_lt:
