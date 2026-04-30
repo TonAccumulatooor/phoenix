@@ -118,6 +118,15 @@ export const api = {
       `/calculator/jetton-balance/${jettonMaster}/${ownerWallet}`
     ),
 
+  getLiveExtraction: (migrationId: string) =>
+    request<{
+      deposited: number;
+      estimated_extraction_ton: number;
+      slippage_estimate_percent: number;
+      dev_buy_assessment: string;
+      recommended_topup_ton: number;
+    }>(`/calculator/live-extraction/${migrationId}`),
+
   getSnapshot: (migrationId: string) =>
     request<{
       holders: {

@@ -50,6 +50,7 @@ export function MigrationDashboard() {
     total_depositors: number;
   } | null>(null);
   const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [liveExtraction, setLiveExtraction] = useState<number | null>(null);
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -103,8 +104,9 @@ export function MigrationDashboard() {
     try {
       const data: any = await api.getMigration(id!);
       setMigration(data);
-      // Load snapshot data in background
+      // Load snapshot and live extraction in background
       api.getSnapshot(id!).then(setSnapshotData).catch(console.error);
+      api.getLiveExtraction(id!).then((ext) => setLiveExtraction(ext.estimated_extraction_ton)).catch(() => {});
     } catch (e) {
       console.error(e);
     } finally {
@@ -328,13 +330,21 @@ export function MigrationDashboard() {
                 <span className="font-mono text-white">1,000,000,000</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-ash-400">Est. LP Extraction</span>
+                <span className="text-ash-400">Est. LP Extraction (at threshold)</span>
                 <span className="font-mono text-white">
                   {migration.lp_estimation_ton
                     ? `~${formatNumber(migration.lp_estimation_ton)} TON`
                     : 'Pending'}
                 </span>
               </div>
+              {liveExtraction !== null && migration.total_deposited > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-ash-400">Est. LP Extraction (current deposits)</span>
+                  <span className="font-mono text-emerald-400">
+                    ~{formatNumber(liveExtraction)} TON
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-ash-400">Community Top-ups</span>
                 <span className="font-mono text-white">

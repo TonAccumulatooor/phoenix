@@ -80,6 +80,36 @@ async def preview_migration(token_address: str):
     }
 
 
+@router.get("/live-extraction/{migration_id}")
+async def live_extraction_estimate(migration_id: str):
+    """Estimate TON extraction based on current total_deposited."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT old_token_address, total_deposited, circulating_supply, threshold_amount FROM migrations WHERE id = ?",
+            (migration_id,),
+        )
+        migration = await cursor.fetchone()
+        if not migration:
+            raise HTTPException(404, "Migration not found")
+
+        deposited = migration["total_deposited"] or 0
+        if deposited <= 0:
+            return {"estimated_extraction_ton": 0, "deposited": 0}
+
+        lp_est = await estimate_extraction(
+            migration["old_token_address"],
+            migration["circulating_supply"],
+            deposited,
+        )
+        return {
+            "deposited": deposited,
+            **lp_est,
+        }
+    finally:
+        await db.close()
+
+
 @router.get("/allocation/{migration_id}/{wallet_address}")
 async def calculate_wallet_allocation(migration_id: str, wallet_address: str):
     """Calculate exact allocation for a wallet in a specific migration."""
