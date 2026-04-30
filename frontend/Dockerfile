@@ -10,6 +10,8 @@ COPY . .
 # Railway passes service variables as build args automatically
 ARG VITE_VAULT_ADDRESS
 ENV VITE_VAULT_ADDRESS=$VITE_VAULT_ADDRESS
+# Cache-bust: change this value to force a fresh build
+ARG CACHE_BUST=2
 RUN npm run build
 
 # Stage 2: Serve
