@@ -342,7 +342,7 @@ function buildSdk() {
   return {
     log,
     ton: {
-      sendTON: sendTONWithCell,
+      sendTON,
       transferJetton,
       sendJettonTransfer,
       getSwapQuote,
