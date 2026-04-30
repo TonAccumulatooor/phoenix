@@ -26,6 +26,8 @@ import {
   VaultJetton,
   MAINNET_FACTORY_ADDR,
 } from '@dedust/sdk';
+import { DEX, pTON } from '@ston-fi/sdk';
+import { Address as AddressCore } from '@ton/core';
 import { tools, manifest } from './index.js';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -223,48 +225,91 @@ async function sendJettonTransfer({ jettonMaster, to, amount, forwardPayload, fo
 
 async function getSwapQuote(fromToken, toToken, amount) {
   /**
-   * Get best swap quote across DeDust.
-   * For now we only support selling jettons for TON via DeDust.
+   * Get best swap quote across DeDust and STON.fi.
+   * Tries both DEXs and returns the best price.
    */
-  const factory = client.open(Factory.createFromAddress(MAINNET_FACTORY_ADDR));
-  const fromAsset = Asset.jetton(Address.parse(fromToken));
-  const toAsset = toToken === 'TON' ? Asset.native() : Asset.jetton(Address.parse(toToken));
-
-  const pool = client.open(await factory.getPool(PoolType.VOLATILE, [fromAsset, toAsset]));
-
   const amountNano = BigInt(Math.floor(amount * 1e9));
+  const quotes = [];
 
+  // Try DeDust
   try {
+    const factory = client.open(Factory.createFromAddress(MAINNET_FACTORY_ADDR));
+    const fromAsset = Asset.jetton(Address.parse(fromToken));
+    const toAsset = toToken === 'TON' ? Asset.native() : Asset.jetton(Address.parse(toToken));
+    const pool = client.open(await factory.getPool(PoolType.VOLATILE, [fromAsset, toAsset]));
+
     const estimate = await pool.getEstimatedSwapOut({
       assetIn: fromAsset,
       amountIn: amountNano,
     });
-
     const outAmount = Number(estimate.amountOut) / 1e9;
-    return { outAmount, dex: 'dedust', pool: pool.address.toString() };
+    if (outAmount > 0) {
+      quotes.push({ outAmount, dex: 'dedust' });
+      log.info(`DeDust quote: ${outAmount.toFixed(4)} TON`);
+    }
   } catch (e) {
     log.warn(`DeDust quote failed: ${e.message}`);
-    // Fallback: estimate from reserves
-    return { outAmount: 0, dex: 'dedust', error: e.message };
   }
+
+  // Try STON.fi — query their API for the pool and estimate
+  try {
+    const resp = await fetch(
+      `https://api.ston.fi/v1/reverse_swap/simulate?` +
+      `offer_address=${fromToken}&ask_address=EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c&units=${amountNano.toString()}&slippage_tolerance=0.05`,
+      { signal: AbortSignal.timeout(10000) },
+    );
+    if (resp.ok) {
+      const data = await resp.json();
+      const outAmount = Number(data.ask_units || 0) / 1e9;
+      if (outAmount > 0) {
+        quotes.push({
+          outAmount,
+          dex: 'stonfi',
+          routerAddress: data.router_address,
+          poolAddress: data.pool_address,
+        });
+        log.info(`STON.fi quote: ${outAmount.toFixed(4)} TON`);
+      }
+    }
+  } catch (e) {
+    log.warn(`STON.fi quote failed: ${e.message}`);
+  }
+
+  if (quotes.length === 0) {
+    return { outAmount: 0, dex: null, error: 'No liquidity on any DEX' };
+  }
+
+  // Return best quote
+  const best = quotes.sort((a, b) => b.outAmount - a.outAmount)[0];
+  log.info(`Best quote: ${best.outAmount.toFixed(4)} TON via ${best.dex}`);
+  return best;
 }
 
 async function swap(fromToken, toToken, amount, opts = {}) {
   /**
-   * Execute a swap: sell fromToken for toToken via DeDust.
-   * Returns { outAmount, dex, txHash }
+   * Execute a swap: sell fromToken for toToken.
+   * Routes to DeDust or STON.fi based on best quote.
    */
   const slippage = opts.slippage || 0.05;
 
-  // Get quote first
   const quote = await getSwapQuote(fromToken, toToken, amount);
   if (quote.outAmount <= 0) {
     throw new Error(`No liquidity for swap ${fromToken} → ${toToken}`);
   }
 
   const minOut = quote.outAmount * (1 - slippage);
-  log.info(`Swap quote: ${amount} tokens → ${quote.outAmount} TON (min: ${minOut.toFixed(4)})`);
+  log.info(`Executing swap: ${amount} tokens → ~${quote.outAmount} TON via ${quote.dex} (min: ${minOut.toFixed(4)})`);
 
+  if (quote.dex === 'dedust') {
+    return await swapViaDedust(fromToken, toToken, amount, minOut, quote);
+  } else if (quote.dex === 'stonfi') {
+    return await swapViaStonfi(fromToken, toToken, amount, minOut, quote);
+  } else {
+    throw new Error(`Unknown DEX: ${quote.dex}`);
+  }
+}
+
+async function swapViaDedust(fromToken, toToken, amount, minOut, quote) {
   const factory = client.open(Factory.createFromAddress(MAINNET_FACTORY_ADDR));
   const fromAsset = Asset.jetton(Address.parse(fromToken));
   const toAsset = toToken === 'TON' ? Asset.native() : Asset.jetton(Address.parse(toToken));
@@ -272,54 +317,77 @@ async function swap(fromToken, toToken, amount, opts = {}) {
   const pool = client.open(await factory.getPool(PoolType.VOLATILE, [fromAsset, toAsset]));
   const jettonVault = client.open(await factory.getJettonVault(Address.parse(fromToken)));
 
-  // Build swap forward payload
   const swapPayload = VaultJetton.createSwapPayload({
     poolAddress: pool.address,
     limit: BigInt(Math.floor(minOut * 1e9)),
   });
 
-  const agentJettonWallet = await getJettonWalletAddress(
-    Address.parse(fromToken),
-    walletAddress,
-  );
-
+  const agentJettonWallet = await getJettonWalletAddress(Address.parse(fromToken), walletAddress);
   const nanoAmount = BigInt(Math.floor(amount * 1e9));
 
-  // TEP-74 transfer to DeDust vault with swap payload
   const body = beginCell()
     .storeUint(0xf8a7ea5, 32)
     .storeUint(0, 64)
     .storeCoins(nanoAmount)
     .storeAddress(jettonVault.address)
     .storeAddress(walletAddress)
-    .storeBit(false)                  // no custom_payload
-    .storeCoins(toNano('0.25'))       // forward_amount
-    .storeBit(true)                   // has forward_payload
+    .storeBit(false)
+    .storeCoins(toNano('0.25'))
+    .storeBit(true)
     .storeRef(swapPayload)
     .endCell();
 
   const seqno = await wallet.getSeqno();
+  await wallet.sendTransfer({
+    seqno,
+    secretKey: keyPair.secretKey,
+    messages: [internal({ to: agentJettonWallet, value: toNano('0.35'), body })],
+  });
 
+  await waitForSeqnoChange(seqno);
+  log.info(`DeDust swap executed: ${amount} tokens → ~${quote.outAmount} TON`);
+  return { outAmount: quote.outAmount, dex: 'dedust', txHash: `swap_dedust_${Date.now()}` };
+}
+
+async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
+  const router = new DEX.v1.Router();
+  const userAddr = AddressCore.parse(walletAddress.toString());
+  const offerJettonAddress = AddressCore.parse(fromToken);
+  const nanoAmount = BigInt(Math.floor(amount * 1e9));
+  const minAskAmount = BigInt(Math.floor(minOut * 1e9));
+
+  const offerJettonWalletAddress = await getJettonWalletAddress(
+    Address.parse(fromToken),
+    walletAddress,
+  );
+
+  const proxyTon = new pTON.v1();
+
+  const txParams = await router.getSwapJettonToTonTxParams(client, {
+    userWalletAddress: userAddr,
+    offerJettonAddress,
+    offerJettonWalletAddress: AddressCore.parse(offerJettonWalletAddress.toString()),
+    offerAmount: nanoAmount,
+    proxyTon,
+    minAskAmount,
+  });
+
+  const seqno = await wallet.getSeqno();
   await wallet.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
     messages: [
       internal({
-        to: agentJettonWallet,
-        value: toNano('0.35'),        // gas for swap
-        body,
+        to: txParams.to.toString(),
+        value: txParams.value,
+        body: txParams.body,
       }),
     ],
   });
 
   await waitForSeqnoChange(seqno);
-  log.info(`Swap executed: ${amount} tokens → ~${quote.outAmount} TON via DeDust`);
-
-  return {
-    outAmount: quote.outAmount,
-    dex: 'dedust',
-    txHash: `swap_${Date.now()}`,
-  };
+  log.info(`STON.fi swap executed: ${amount} tokens → ~${quote.outAmount} TON`);
+  return { outAmount: quote.outAmount, dex: 'stonfi', txHash: `swap_stonfi_${Date.now()}` };
 }
 
 // ── Wait for transaction confirmation ────────────────────────────────────────
