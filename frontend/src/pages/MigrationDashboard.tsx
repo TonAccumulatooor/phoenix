@@ -433,7 +433,7 @@ export function MigrationDashboard() {
             )}
 
             {/* Deposit Action */}
-            {isDepositing && (
+            {(isDepositing || migration.status === 'qualified') && (
               <div className="mt-6 pt-6 border-t border-ash-700/50">
                 {!walletAddress ? (
                   <button
