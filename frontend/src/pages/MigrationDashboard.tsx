@@ -244,6 +244,8 @@ export function MigrationDashboard() {
             percent={migration.progress_percent}
             label="Vault Deposit Progress — 51% required"
             size="lg"
+            remaining={Math.max(0, (migration.threshold_amount || 0) - (migration.total_deposited || 0))}
+            symbol={migration.old_token?.symbol}
           />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
             <div>

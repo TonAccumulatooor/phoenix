@@ -5,6 +5,8 @@ interface ProgressBarProps {
   label?: string;
   showPercent?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  remaining?: number;
+  symbol?: string;
 }
 
 export function ProgressBar({
@@ -12,10 +14,12 @@ export function ProgressBar({
   label,
   showPercent = true,
   size = 'md',
+  remaining,
+  symbol,
 }: ProgressBarProps) {
   const heights = { sm: 'h-2', md: 'h-3', lg: 'h-4' };
   const clamped = Math.min(Math.max(percent, 0), 100);
-  const qualified = clamped >= 51;
+  const qualified = clamped >= 100;
 
   return (
     <div className="w-full">
@@ -45,11 +49,22 @@ export function ProgressBar({
           transition={{ duration: 1.2, ease: 'easeOut' }}
         />
       </div>
-      {qualified && (
+      {qualified ? (
         <div className="mt-1 text-xs text-emerald-400 font-medium">
           Threshold reached — Migration qualified
         </div>
-      )}
+      ) : remaining != null && remaining > 0 ? (
+        <div className="mt-1 text-xs text-ash-400">
+          {formatCompact(remaining)} {symbol || 'tokens'} still needed to qualify
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function formatCompact(n: number): string {
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + 'B';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return n.toFixed(0);
 }
