@@ -55,6 +55,13 @@ export function MigrationDashboard() {
   useEffect(() => {
     if (!id) return;
     loadMigration();
+
+    // Auto-refresh every 15s while migration is active
+    const interval = setInterval(() => {
+      loadMigration();
+      if (walletAddress) loadAllocation();
+    }, 15000);
+    return () => clearInterval(interval);
   }, [id]);
 
   useEffect(() => {
