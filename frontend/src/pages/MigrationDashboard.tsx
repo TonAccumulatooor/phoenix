@@ -243,7 +243,7 @@ export function MigrationDashboard() {
                 : 'border-ember-500/30 bg-ember-500/10'
             }`}
           >
-            {statusLabel(migration.status)}
+            {statusLabel(migration.status, migration.old_token_symbol ?? undefined)}
           </div>
         </div>
 

@@ -43,6 +43,9 @@ const POLL_INTERVAL   = 30_000; // 30 seconds
 
 // Track migrations currently being executed to prevent double-runs
 const _executing = new Set();
+// Cooldown after failures — wait 5 minutes before retrying a failed migration
+const _failedCooldowns = new Map(); // migrationId → timestamp when retry is allowed
+const FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
 
 // ── Logger ───────────────────────────────────────────────────────────────────
 
@@ -254,25 +257,38 @@ async function getSwapQuote(fromToken, toToken, amount) {
     log.warn(`DeDust quote failed: ${e.message}`);
   }
 
-  // Try STON.fi — query their API for the pool and estimate
+  // Try STON.fi — use SDK router to build swap params (validates pool exists)
   try {
-    const resp = await fetch(
-      `https://api.ston.fi/v1/reverse_swap/simulate?` +
-      `offer_address=${fromToken}&ask_address=EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c&units=${amountNano.toString()}&slippage_tolerance=0.05`,
-      { signal: AbortSignal.timeout(10000) },
+    const router = client.open(new DEX.v1.Router());
+    const userAddr = AddressCore.parse(walletAddress.toString());
+    const offerJettonAddress = AddressCore.parse(fromToken);
+    const proxyTon = new pTON.v1();
+
+    const offerJettonWalletAddr = await getJettonWalletAddress(
+      Address.parse(fromToken),
+      walletAddress,
     );
-    if (resp.ok) {
-      const data = await resp.json();
-      const outAmount = Number(data.ask_units || 0) / 1e9;
-      if (outAmount > 0) {
-        quotes.push({
-          outAmount,
-          dex: 'stonfi',
-          routerAddress: data.router_address,
-          poolAddress: data.pool_address,
-        });
-        log.info(`STON.fi quote: ${outAmount.toFixed(4)} TON`);
-      }
+
+    // getSwapJettonToTonTxParams will throw if no pool exists
+    const txParams = await router.getSwapJettonToTonTxParams(client, {
+      userWalletAddress: userAddr,
+      offerJettonAddress,
+      offerJettonWalletAddress: AddressCore.parse(offerJettonWalletAddr.toString()),
+      offerAmount: amountNano,
+      proxyTon,
+      minAskAmount: BigInt(1), // minimal for quote — real slippage applied during swap
+    });
+
+    if (txParams) {
+      // STON.fi SDK doesn't return expected output directly, so we estimate
+      // by trying a small amount and scaling, or just mark as available
+      // For now, mark STON.fi as available — the actual swap handles slippage
+      quotes.push({
+        outAmount: 0.001, // placeholder — STON.fi pool exists, prefer if DeDust fails
+        dex: 'stonfi',
+        txParams, // cache tx params to avoid re-computing during swap
+      });
+      log.info(`STON.fi pool found for ${fromToken} — swap available`);
     }
   } catch (e) {
     log.warn(`STON.fi quote failed: ${e.message}`);
@@ -354,18 +370,19 @@ async function swapViaDedust(fromToken, toToken, amount, minOut, quote) {
 }
 
 async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
-  const router = new DEX.v1.Router();
-  const userAddr = AddressCore.parse(walletAddress.toString());
-  const offerJettonAddress = AddressCore.parse(fromToken);
   const nanoAmount = BigInt(Math.floor(amount * 1e9));
   const minAskAmount = BigInt(Math.floor(minOut * 1e9));
+
+  // Re-build tx params with real slippage (quote used minAskAmount=1 for pool detection)
+  const router = client.open(new DEX.v1.Router());
+  const userAddr = AddressCore.parse(walletAddress.toString());
+  const offerJettonAddress = AddressCore.parse(fromToken);
+  const proxyTon = new pTON.v1();
 
   const offerJettonWalletAddress = await getJettonWalletAddress(
     Address.parse(fromToken),
     walletAddress,
   );
-
-  const proxyTon = new pTON.v1();
 
   const txParams = await router.getSwapJettonToTonTxParams(client, {
     userWalletAddress: userAddr,
@@ -493,12 +510,23 @@ async function pollForSellingMigrations() {
         continue;
       }
 
+      const cooldownUntil = _failedCooldowns.get(mig.id);
+      if (cooldownUntil && Date.now() < cooldownUntil) {
+        const secsLeft = Math.ceil((cooldownUntil - Date.now()) / 1000);
+        log.info(`Migration ${mig.id} on cooldown — retry in ${secsLeft}s`);
+        continue;
+      }
+
       log.info(`=== Starting execution for migration ${mig.id} (${mig.old_token_symbol}) ===`);
       _executing.add(mig.id);
 
       // Execute in background — don't block the poll loop
-      executeMigration(mig.id).catch((err) => {
+      executeMigration(mig.id).then(() => {
+        _failedCooldowns.delete(mig.id); // success — clear any cooldown
+      }).catch((err) => {
         log.error(`Migration ${mig.id} pipeline failed: ${err.message}`);
+        _failedCooldowns.set(mig.id, Date.now() + FAILURE_COOLDOWN_MS);
+        log.info(`Migration ${mig.id} on 5-minute cooldown before retry`);
       }).finally(() => {
         _executing.delete(mig.id);
       });

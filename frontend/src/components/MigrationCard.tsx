@@ -42,7 +42,7 @@ export function MigrationCard({ migration, index = 0 }: MigrationCardProps) {
                   : 'border-pyre/30 bg-pyre/10'
               }`}
             >
-              {statusLabel(migration.status)}
+              {statusLabel(migration.status, migration.old_token_symbol ?? undefined)}
             </span>
           </div>
 

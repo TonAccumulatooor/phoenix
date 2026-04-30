@@ -31,12 +31,12 @@ export function timeRemaining(deadline: string): string {
   return `${mins}m remaining`;
 }
 
-export function statusLabel(status: string): string {
+export function statusLabel(status: string, tokenSymbol?: string): string {
   const labels: Record<string, string> = {
     proposed: 'Proposed',
     depositing: 'Collecting Deposits',
     qualified: 'Threshold Met',
-    selling: 'Selling OLDMEME',
+    selling: `Selling ${tokenSymbol || 'Tokens'}`,
     launching: 'Launching on Groypad',
     distributing: 'Distributing Tokens',
     late_claims: 'Late Claims Open',
