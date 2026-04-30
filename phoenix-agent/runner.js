@@ -70,10 +70,12 @@ async function initWallet() {
 
   keyPair = await mnemonicToPrivateKey(words);
 
-  const headers = {};
-  if (TONCENTER_KEY) headers['X-API-Key'] = TONCENTER_KEY;
+  // Pass API key both as query param (some CDNs strip X-API-Key header) and as apiKey
+  const rpcUrl = TONCENTER_KEY
+    ? `${TON_RPC_URL}?api_key=${TONCENTER_KEY}`
+    : TON_RPC_URL;
 
-  client = new TonClient({ endpoint: TON_RPC_URL, apiKey: TONCENTER_KEY || undefined });
+  client = new TonClient({ endpoint: rpcUrl, apiKey: TONCENTER_KEY || undefined });
 
   const walletContract = WalletContractV5R1.create({
     workchain: 0,
