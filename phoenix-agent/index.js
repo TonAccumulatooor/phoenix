@@ -220,13 +220,14 @@ function sellOldTokenTool(sdk) {
 
         // Read actual wallet balance — never trust DB amount
         const walletBalance = await sdk.ton.getJettonBalance(jetton_address);
-        const sellAmount = walletBalance > 0 ? walletBalance : amount;
-        sdk.log.info(`Wallet holds ${walletBalance} tokens (DB says ${amount}). Selling ${sellAmount}`);
+        sdk.log.info(`Wallet holds ${walletBalance} tokens (DB says ${amount})`);
 
-        if (sellAmount <= 0) {
+        if (walletBalance <= 0) {
           sdk.log.info('Wallet is empty — tokens already sold');
           return { success: true, ton_received: 0, already_sold: true };
         }
+
+        const sellAmount = walletBalance;
 
         // Split into 4 trades to reduce price impact
         const NUM_TRADES = 4;
