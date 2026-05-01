@@ -277,3 +277,20 @@ async def update_migration_status(migration_id: str, new_status: str, x_agent_ke
         return {"status": new_status}
     finally:
         await db.close()
+
+
+@router.delete("/{migration_id}")
+async def delete_migration(migration_id: str, x_agent_key: str = Header(None)):
+    if not AGENT_API_KEY or x_agent_key != AGENT_API_KEY:
+        raise HTTPException(403, "Invalid or missing agent API key")
+
+    db = await get_db()
+    try:
+        await db.execute("DELETE FROM deposits WHERE migration_id = ?", (migration_id,))
+        result = await db.execute("DELETE FROM migrations WHERE id = ?", (migration_id,))
+        await db.commit()
+        if result.rowcount == 0:
+            raise HTTPException(404, "Migration not found")
+        return {"deleted": migration_id}
+    finally:
+        await db.close()
