@@ -474,6 +474,7 @@ function buildSdk() {
       transferJetton,
       sendJettonTransfer,
       getJettonBalance,
+      getTonBalance: async () => Number(await client.getBalance(walletAddress)) / 1e9,
       getSwapQuote,
       swap,
       sender: {

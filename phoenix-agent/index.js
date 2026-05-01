@@ -1284,8 +1284,7 @@ function executeMigrationTool(sdk) {
 
         if (!sellResult.success) return fail('sell_old_token', sellResult.error);
 
-        const tonReceived = sellResult.ton_received;
-        steps.push({ step: 'sell_old_token', status: 'complete', ton_received: tonReceived });
+        steps.push({ step: 'sell_old_token', status: 'complete', ton_received: sellResult.ton_received });
 
         // ── Step 3: Build metadata ────────────────────────────────────────
         sdk.log.info('Step 3: Building TEP-64 metadata...');
@@ -1296,16 +1295,26 @@ function executeMigrationTool(sdk) {
 
         steps.push({ step: 'build_metadata', status: 'complete', metadata_url: metaResult.metadata_url });
 
-        // ── Step 4: Deploy on Groypad ─────────���───────────────────────────
+        // ── Step 4: Deploy on Groypad ─────────────────────────────────────
+        // Use wallet TON balance minus 5 TON buffer for gas/future ops
+        const TON_BUFFER = 5;
+        const walletTon = await sdk.ton.getTonBalance();
+        const devBuyTon = Math.floor((walletTon - TON_BUFFER) * 100) / 100; // truncate to 2dp
+        sdk.log.info(`Wallet has ${walletTon.toFixed(2)} TON, reserving ${TON_BUFFER} TON buffer, using ${devBuyTon} TON for dev buy`);
+
+        if (devBuyTon < 1) {
+          return fail('deploy_on_groypad', `Not enough TON for dev buy. Wallet: ${walletTon.toFixed(2)}, need at least ${TON_BUFFER + 1} TON`);
+        }
+
         const newTokenName = migration.new_token?.name || `${migration.old_token.name} Reborn`;
         const newTokenSymbol = migration.new_token?.symbol || migration.old_token.symbol;
 
-        sdk.log.info(`Step 4: Deploying ${newTokenSymbol} on Groypad with ${tonReceived} TON...`);
+        sdk.log.info(`Step 4: Deploying ${newTokenSymbol} on Groypad with ${devBuyTon} TON...`);
         const deployTool = tools(sdk).find(t => t.name === 'phoenix_deploy_on_groypad');
         const deployResult = await deployTool.execute({
           name: newTokenName,
           symbol: newTokenSymbol,
-          dev_buy_ton: tonReceived,
+          dev_buy_ton: devBuyTon,
           metadata_url: metaResult.metadata_url,
         });
 
@@ -1324,7 +1333,7 @@ function executeMigrationTool(sdk) {
         const discoverResult = await discoverTool.execute({
           tx_ref: deployResult.tx_ref,
           migration_id,
-          dev_buy_ton: tonReceived,
+          dev_buy_ton: devBuyTon,
           backend_url,
           agent_key,
         });
@@ -1336,7 +1345,7 @@ function executeMigrationTool(sdk) {
           const retry = await discoverTool.execute({
             tx_ref: deployResult.tx_ref,
             migration_id,
-            dev_buy_ton: tonReceived,
+            dev_buy_ton: devBuyTon,
             backend_url,
             agent_key,
           });
@@ -1486,7 +1495,7 @@ function executeMigrationTool(sdk) {
           success: true,
           migration_id,
           new_token_address: newTokenAddress,
-          ton_extracted: tonReceived,
+          ton_extracted: devBuyTon,
           agent_supply: discoverResult.agent_supply,
           distributions_sent: distResult.sent,
           nft_airdrop_sent: airdropResult.success ? airdropResult.sent : 0,
