@@ -163,7 +163,11 @@ async function sendTON(toAddress, amountTon, payloadBase64) {
 
   await waitForSeqnoChange(seqno);
   log.info(`Sent ${amountTon} TON to ${toAddress}`);
-  return { txRef: `ton_${Date.now()}` };
+
+  // Fetch real TX hash from the latest wallet transaction
+  const txHash = await getLatestTxHash();
+  log.info(`TX hash: ${txHash}`);
+  return { txRef: txHash };
 }
 
 async function transferJetton(jettonMaster, destAddress, amount) {
@@ -448,6 +452,27 @@ async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
   await waitForSeqnoChange(seqno);
   log.info(`STON.fi v${routerInfo.majorVersion}.${routerInfo.minorVersion} swap executed: ${amount} tokens → ~${quote.outAmount} TON`);
   return { outAmount: quote.outAmount, dex: 'stonfi', txHash: `swap_stonfi_${Date.now()}` };
+}
+
+async function getLatestTxHash() {
+  /**
+   * Fetch the most recent transaction hash for the agent wallet via TonAPI.
+   * Called after seqno changes to get the real on-chain TX hash.
+   */
+  try {
+    const addr = walletAddress.toString();
+    const resp = await fetch(`https://tonapi.io/v2/blockchain/accounts/${addr}/transactions?limit=1`, {
+      headers: TON_API_KEY ? { Authorization: `Bearer ${TON_API_KEY}` } : {},
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) throw new Error(`TonAPI ${resp.status}`);
+    const data = await resp.json();
+    const tx = data.transactions?.[0];
+    if (tx?.hash) return tx.hash;
+  } catch (e) {
+    log.warn(`Could not fetch latest TX hash: ${e.message}`);
+  }
+  return `ton_${Date.now()}`; // fallback
 }
 
 // ── Wait for transaction confirmation ────────────────────────────────────────

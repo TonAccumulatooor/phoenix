@@ -12,7 +12,7 @@
  * Every step reports back to the Phoenix backend so the DB stays in sync.
  *
  * Groypad integration notes (reverse-engineered from on-chain):
- *   - MemeFactory: EQAO4cYqithwdltzmrlal1L5JKLK5Xk76feAJq0VoBC6Fy8T
+ *   - MemeFactory: UQClgkR0eLgWAR0tZh8YbQyDqa-Jn5wUP1XHPLDB6RmAPySF
  *   - Deploy opcode: 0x6ff416dc → MemeFactory (deploy + dev buy in one TX)
  *   - Deploy cell:   op(32) + qid(64) + flag:uint4(=4) + forward_amount:Coins + pad:uint2(=0) + ref[url_bytes]
  *   - Buy opcode:  0x742b36d8 → Meme (jetton master)
@@ -33,7 +33,7 @@ import {
 import { Address, toNano, TonClient4, beginCell } from '@ton/ton';
 
 // Groypad constants
-const MEME_FACTORY     = 'EQAO4cYqithwdltzmrlal1L5JKLK5Xk76feAJq0VoBC6Fy8T';
+const MEME_FACTORY     = 'UQClgkR0eLgWAR0tZh8YbQyDqa-Jn5wUP1XHPLDB6RmAPySF';
 const DEPLOY_OPCODE    = 0x6ff416dc;
 const BUY_OPCODE       = 0x742b36d8;
 const DEPLOY_FLAG      = 4;
