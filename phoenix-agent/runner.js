@@ -26,9 +26,12 @@ import {
   VaultJetton,
   MAINNET_FACTORY_ADDR,
 } from '@dedust/sdk';
-import { DEX, pTON } from '@ston-fi/sdk';
+import { DEX, pTON, dexFactory } from '@ston-fi/sdk';
+import { StonApiClient } from '@ston-fi/api';
 import { Address as AddressCore } from '@ton/core';
 import { tools, manifest } from './index.js';
+
+const stonApi = new StonApiClient();
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -255,58 +258,24 @@ async function sendJettonTransfer({ jettonMaster, to, amount, forwardPayload, fo
   return { txHash: `jetton_fwd_${Date.now()}` };
 }
 
-async function lookupStonfiPool(jettonAddress) {
+async function simulateStonfiSwap(offerAddress, askAddress, offerUnits) {
   /**
-   * Query STON.fi API for an actual pool containing this token.
-   * Returns { poolAddress, routerAddress, dexVersion, reserve0, reserve1 } or null.
+   * Use StonApiClient.simulateSwap() to get:
+   *   - Exact expected output (askUnits, minAskUnits)
+   *   - Router info (address, majorVersion, minorVersion, ptonMasterAddress, routerType)
+   * This is the single source of truth — no guessing versions or pTON addresses.
    */
   try {
-    const resp = await fetch('https://api.ston.fi/v1/pools', {
-      signal: AbortSignal.timeout(15000),
+    const result = await stonApi.simulateSwap({
+      offerAddress,
+      askAddress,
+      offerUnits,
+      slippageTolerance: '0.50', // 50% — matches our swap slippage
     });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const pools = data.pool_list || data.pools || [];
-
-    // TON native address on STON.fi
-    const TON_ADDR = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c';
-
-    // Find pools that pair our token with TON
-    const matching = pools.filter(p =>
-      (p.token0_address === jettonAddress && p.token1_address === TON_ADDR) ||
-      (p.token1_address === jettonAddress && p.token0_address === TON_ADDR)
-    );
-
-    if (matching.length === 0) return null;
-
-    // Prefer the pool with more liquidity
-    const best = matching.sort((a, b) => {
-      const liqA = parseFloat(a.lp_total_supply_usd || '0');
-      const liqB = parseFloat(b.lp_total_supply_usd || '0');
-      return liqB - liqA;
-    })[0];
-
-    // Extract DEX version from tags
-    const versionTag = (best.tags || []).find(t => t.startsWith('pool:dex_major_version:'));
-    const dexVersion = versionTag ? parseInt(versionTag.split(':').pop()) : 1;
-
-    // Determine TON reserve (for output estimate)
-    const tonReserve = best.token0_address === TON_ADDR
-      ? Number(best.reserve0) / 1e9
-      : Number(best.reserve1) / 1e9;
-
-    log.info(`STON.fi pool found: ${best.address} (v${dexVersion}, router: ${best.router_address}, TON reserve: ${tonReserve.toFixed(2)})`);
-
-    return {
-      poolAddress: best.address,
-      routerAddress: best.router_address,
-      dexVersion,
-      tonReserve,
-      reserve0: best.reserve0,
-      reserve1: best.reserve1,
-    };
+    log.info(`STON.fi simulate: ${result.askUnits} ask, router v${result.router.majorVersion}.${result.router.minorVersion} @ ${result.router.address}, pTON: ${result.router.ptonMasterAddress}`);
+    return result;
   } catch (e) {
-    log.warn(`STON.fi pool lookup failed: ${e.message}`);
+    log.warn(`STON.fi simulateSwap failed: ${e.message}`);
     return null;
   }
 }
@@ -314,7 +283,7 @@ async function lookupStonfiPool(jettonAddress) {
 async function getSwapQuote(fromToken, toToken, amount) {
   /**
    * Get best swap quote across DeDust and STON.fi.
-   * Looks up actual pool data — never guesses.
+   * Uses StonApiClient.simulateSwap() for exact STON.fi quotes + router info.
    */
   const amountNano = BigInt(Math.floor(amount * 1e9));
   const quotes = [];
@@ -339,18 +308,18 @@ async function getSwapQuote(fromToken, toToken, amount) {
     log.warn(`DeDust quote failed: ${e.message}`);
   }
 
-  // Try STON.fi — look up actual pool from API
-  const stonfiPool = await lookupStonfiPool(fromToken);
-  if (stonfiPool) {
-    // Rough estimate using constant-product formula: out = (amountIn * reserveOut) / (reserveIn + amountIn)
-    // This is an approximation; actual output depends on fees
-    const estOut = stonfiPool.tonReserve * 0.95; // conservative — we're likely dumping most of the token reserve
+  // Try STON.fi — simulateSwap gives exact output + correct router/pTON info
+  const TON_ADDR = 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c';
+  const askAddr = toToken === 'TON' ? TON_ADDR : toToken;
+  const sim = await simulateStonfiSwap(fromToken, askAddr, amountNano.toString());
+  if (sim && sim.askUnits && BigInt(sim.askUnits) > 0n) {
+    const outAmount = Number(BigInt(sim.askUnits)) / 1e9;
     quotes.push({
-      outAmount: Math.max(estOut, 0.001),
+      outAmount,
       dex: 'stonfi',
-      poolData: stonfiPool,
+      simulation: sim, // carries router info, pTON address, minAskUnits
     });
-    log.info(`STON.fi quote: ~${estOut.toFixed(4)} TON (pool v${stonfiPool.dexVersion})`);
+    log.info(`STON.fi quote: ${outAmount.toFixed(4)} TON (router v${sim.router.majorVersion}.${sim.router.minorVersion})`);
   }
 
   if (quotes.length === 0) {
@@ -429,10 +398,11 @@ async function swapViaDedust(fromToken, toToken, amount, minOut, quote) {
 }
 
 async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
-  const poolData = quote.poolData;
-  if (!poolData) throw new Error('STON.fi pool data missing from quote');
+  const sim = quote.simulation;
+  if (!sim) throw new Error('STON.fi simulation data missing from quote');
 
   const nanoAmount = BigInt(Math.floor(amount * 1e9));
+  // Use minAskUnits from simulation (already accounts for slippage), or our own floor
   const minAskAmount = BigInt(Math.floor(minOut * 1e9));
   const userAddr = AddressCore.parse(walletAddress.toString());
   const offerJettonAddress = AddressCore.parse(fromToken);
@@ -442,22 +412,14 @@ async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
     walletAddress,
   );
 
-  let router;
-  let proxyTon;
+  // Use dexFactory with the exact router info from simulateSwap —
+  // this creates Router and pTON instances with the CORRECT addresses and version
+  const routerInfo = sim.router;
+  log.info(`Using STON.fi router v${routerInfo.majorVersion}.${routerInfo.minorVersion} @ ${routerInfo.address}, pTON: ${routerInfo.ptonMasterAddress}`);
 
-  if (poolData.dexVersion >= 2) {
-    // v2 pool — use v2.1 CPI router with the actual router address from the pool
-    log.info(`Using STON.fi v2.1 CPI router: ${poolData.routerAddress}`);
-    router = client.open(
-      new DEX.v2_1.Router.CPI(AddressCore.parse(poolData.routerAddress))
-    );
-    proxyTon = new pTON.v2_1();
-  } else {
-    // v1 pool — use v1 router
-    log.info(`Using STON.fi v1 router`);
-    router = client.open(new DEX.v1.Router());
-    proxyTon = new pTON.v1();
-  }
+  const dex = dexFactory(routerInfo);
+  const router = client.open(dex.Router.create(AddressCore.parse(routerInfo.address)));
+  const proxyTon = dex.pTON.create(AddressCore.parse(routerInfo.ptonMasterAddress));
 
   // provider is injected by client.open() — do NOT pass client as first arg
   const txParams = await router.getSwapJettonToTonTxParams({
@@ -484,7 +446,7 @@ async function swapViaStonfi(fromToken, toToken, amount, minOut, quote) {
   });
 
   await waitForSeqnoChange(seqno);
-  log.info(`STON.fi v${poolData.dexVersion} swap executed: ${amount} tokens → ~${quote.outAmount} TON`);
+  log.info(`STON.fi v${routerInfo.majorVersion}.${routerInfo.minorVersion} swap executed: ${amount} tokens → ~${quote.outAmount} TON`);
   return { outAmount: quote.outAmount, dex: 'stonfi', txHash: `swap_stonfi_${Date.now()}` };
 }
 
