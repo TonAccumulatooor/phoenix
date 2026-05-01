@@ -475,15 +475,19 @@ export function MigrationDashboard() {
                         <input
                           type="number"
                           value={depositAmount}
-                          onChange={(e) => setDepositAmount(e.target.value)}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === '' || /^\d*\.?\d{0,2}$/.test(v)) setDepositAmount(v);
+                          }}
                           placeholder={`${migration.old_token.symbol} amount`}
                           className="phoenix-input text-sm w-full pr-14"
                           min="0"
+                          step="0.01"
                         />
                         {walletTokenBalance !== null && walletTokenBalance > 0 && (
                           <button
                             type="button"
-                            onClick={() => setDepositAmount(String(walletTokenBalance))}
+                            onClick={() => setDepositAmount(String(Math.floor(walletTokenBalance! * 100) / 100))}
                             className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-ember-400 hover:text-ember-300 transition-colors"
                           >
                             MAX
@@ -528,10 +532,14 @@ export function MigrationDashboard() {
                   <input
                     type="number"
                     value={topupAmount}
-                    onChange={(e) => setTopupAmount(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '' || /^\d*\.?\d{0,2}$/.test(v)) setTopupAmount(v);
+                    }}
                     placeholder="TON amount"
                     className="phoenix-input text-sm flex-1"
                     min="0"
+                    step="0.01"
                   />
                   <button
                     onClick={handleTopup}

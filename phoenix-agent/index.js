@@ -231,7 +231,7 @@ function sellOldTokenTool(sdk) {
         }
 
         const result = await sdk.ton.swap(jetton_address, 'TON', amount, {
-          slippage: 0.05,
+          slippage: 1.0, // 100% — accept any output
         });
 
         const tonReceived = result.outAmount;

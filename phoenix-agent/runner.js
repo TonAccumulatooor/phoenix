@@ -351,7 +351,7 @@ async function swap(fromToken, toToken, amount, opts = {}) {
    * Execute a swap: sell fromToken for toToken.
    * Routes to DeDust or STON.fi based on best quote.
    */
-  const slippage = opts.slippage || 0.05;
+  const slippage = opts.slippage || 1.0; // 100% slippage — accept any output
 
   const quote = await getSwapQuote(fromToken, toToken, amount);
   if (quote.outAmount <= 0) {
