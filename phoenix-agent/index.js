@@ -279,7 +279,7 @@ function sellOldTokenTool(sdk) {
         sdk.log.info(`All trades complete! Total received: ${tonReceived} TON`);
 
         // Report extraction to backend — transitions status to 'launching'
-        const report = await backendPost(backend_url, `/api/agent/${migration_id}/extracted-ton`, {
+        const report = await backendPost(backend_url, `/api/migrations/${migration_id}/extracted-ton`, {
           extracted_ton: tonReceived,
           dev_buy_ton: tonReceived,
         }, agent_key);
@@ -343,7 +343,7 @@ function buildMetadataTool(sdk) {
         const hasOverrides = Object.keys(body).length > 0;
         const result = await backendPost(
           backend_url,
-          `/api/agent/${migration_id}/build-metadata`,
+          `/api/migrations/${migration_id}/build-metadata`,
           hasOverrides ? body : undefined,
           agent_key,
         );
@@ -570,7 +570,7 @@ function discoverTokenAddressTool(sdk) {
         }
 
         // Report to backend — transitions status to 'distributing'
-        const report = await backendPost(backend_url, `/api/agent/${migration_id}/deployed-token`, {
+        const report = await backendPost(backend_url, `/api/migrations/${migration_id}/deployed-token`, {
           new_token_address: newTokenAddress,
           agent_supply: agentSupply,
           dev_buy_ton: dev_buy_ton || undefined,
@@ -769,7 +769,7 @@ function distributeNewTokenTool(sdk) {
         sdk.log.info('Executing distributions on backend...');
         let distResult;
         try {
-          distResult = await backendPost(backend_url, `/api/agent/${migration_id}/execute-distributions`, {}, agent_key);
+          distResult = await backendPost(backend_url, `/api/migrations/${migration_id}/execute-distributions`, {}, agent_key);
         } catch (e) {
           // 409 = already executed — fetch existing
           if (e.message.includes('409')) {
@@ -780,7 +780,7 @@ function distributeNewTokenTool(sdk) {
         }
 
         // Step 2: Fetch the distribution records
-        const distData = await backendGet(backend_url, `/api/agent/${migration_id}/distributions-executed`, agent_key);
+        const distData = await backendGet(backend_url, `/api/migrations/${migration_id}/distributions-executed`, agent_key);
         const pending = distData.distributions.filter(d => d.status === 'pending');
 
         if (pending.length === 0) {
@@ -820,7 +820,7 @@ function distributeNewTokenTool(sdk) {
           // Mark completed batch in backend
           if (results.txMap.length > 0) {
             try {
-              await backendPost(backend_url, `/api/agent/${migration_id}/distributions-mark-sent`, {
+              await backendPost(backend_url, `/api/migrations/${migration_id}/distributions-mark-sent`, {
                 distributions: results.txMap,
               }, agent_key);
               results.txMap = []; // Reset after successful report
@@ -837,7 +837,7 @@ function distributeNewTokenTool(sdk) {
         // Mark any remaining
         if (results.txMap.length > 0) {
           try {
-            await backendPost(backend_url, `/api/agent/${migration_id}/distributions-mark-sent`, {
+            await backendPost(backend_url, `/api/migrations/${migration_id}/distributions-mark-sent`, {
               distributions: results.txMap,
             });
           } catch (e) {
@@ -905,7 +905,7 @@ function claimCreatorFeesTool(sdk) {
         // Update backend with the creator fee wallet
         if (migration_id) {
           try {
-            await backendPost(backend_url, `/api/agent/${migration_id}/creator-reward`, {
+            await backendPost(backend_url, `/api/migrations/${migration_id}/creator-reward`, {
               wallet: creator_fee_wallet,
             }, agent_key);
             sdk.log.info(`Backend updated: creator_reward_wallet → ${creator_fee_wallet}`);
@@ -972,7 +972,7 @@ function nftAirdropTool(sdk) {
         sdk.log.info('Taking NFT holder snapshot...');
         let snapshotResult;
         try {
-          snapshotResult = await backendPost(backend_url, `/api/agent/${migration_id}/nft-airdrop-snapshot`, {}, agent_key);
+          snapshotResult = await backendPost(backend_url, `/api/migrations/${migration_id}/nft-airdrop-snapshot`, {}, agent_key);
         } catch (e) {
           if (e.message.includes('409')) {
             sdk.log.info('NFT snapshot already taken — fetching existing records');
@@ -982,7 +982,7 @@ function nftAirdropTool(sdk) {
         }
 
         // Step 2: Fetch airdrop records
-        const airdropData = await backendGet(backend_url, `/api/agent/${migration_id}/nft-airdrops`, agent_key);
+        const airdropData = await backendGet(backend_url, `/api/migrations/${migration_id}/nft-airdrops`, agent_key);
         const pending = airdropData.airdrops.filter(a => a.status === 'pending');
 
         if (pending.length === 0) {
@@ -1017,7 +1017,7 @@ function nftAirdropTool(sdk) {
         // Step 4: Mark completed in backend
         if (results.txMap.length > 0) {
           try {
-            await backendPost(backend_url, `/api/agent/${migration_id}/nft-airdrops-mark-sent`, {
+            await backendPost(backend_url, `/api/migrations/${migration_id}/nft-airdrops-mark-sent`, {
               airdrops: results.txMap,
             }, agent_key);
           } catch (e) {
