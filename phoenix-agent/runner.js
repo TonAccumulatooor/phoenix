@@ -112,6 +112,23 @@ async function getJettonWalletAddress(jettonMaster, owner) {
   return result.stack.readAddress();
 }
 
+async function getJettonBalance(jettonMaster) {
+  /**
+   * Get agent wallet's balance of a specific jetton (human-readable units).
+   */
+  const masterAddr = typeof jettonMaster === 'string' ? Address.parse(jettonMaster) : jettonMaster;
+  const jettonWalletAddr = await getJettonWalletAddress(masterAddr, walletAddress);
+
+  try {
+    const result = await client.runMethod(jettonWalletAddr, 'get_wallet_data', []);
+    const balance = result.stack.readBigNumber();
+    return Number(balance) / 1e9;
+  } catch (e) {
+    log.warn(`Could not read jetton balance: ${e.message}`);
+    return 0;
+  }
+}
+
 // ── SDK interface implementation ─────────────────────────────────────────────
 // These methods match what the Teleton plugin tools expect from sdk.ton.*
 
@@ -351,15 +368,15 @@ async function swap(fromToken, toToken, amount, opts = {}) {
    * Execute a swap: sell fromToken for toToken.
    * Routes to DeDust or STON.fi based on best quote.
    */
-  const slippage = opts.slippage || 1.0; // 100% slippage — accept any output
+  const slippage = opts.slippage || 0.50; // 50% slippage default
 
   const quote = await getSwapQuote(fromToken, toToken, amount);
   if (quote.outAmount <= 0) {
     throw new Error(`No liquidity for swap ${fromToken} → ${toToken}`);
   }
 
-  const minOut = quote.outAmount * (1 - slippage);
-  log.info(`Executing swap: ${amount} tokens → ~${quote.outAmount} TON via ${quote.dex} (min: ${minOut.toFixed(4)})`);
+  const minOut = Math.max(quote.outAmount * (1 - slippage), 0.000000001); // floor at 1 nanoton
+  log.info(`Executing swap: ${amount} tokens → ~${quote.outAmount} TON via ${quote.dex} (min: ${minOut.toFixed(9)})`);
 
   if (quote.dex === 'dedust') {
     return await swapViaDedust(fromToken, toToken, amount, minOut, quote);
@@ -494,6 +511,7 @@ function buildSdk() {
       sendTON,
       transferJetton,
       sendJettonTransfer,
+      getJettonBalance,
       getSwapQuote,
       swap,
       sender: {

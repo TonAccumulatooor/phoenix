@@ -214,28 +214,53 @@ function sellOldTokenTool(sdk) {
       required: ['migration_id', 'jetton_address', 'amount'],
     },
     execute: async ({ migration_id, jetton_address, amount, min_ton_out = 0, backend_url = 'http://localhost:8000', agent_key = '' }) => {
-      sdk.log.info(`Selling ${amount} tokens from ${jetton_address}`);
-
       try {
         // Update status to selling
         await backendPost(backend_url, `/api/migrations/${migration_id}/status`, { new_status: 'selling' }).catch(() => {});
 
-        const quote = await sdk.ton.getSwapQuote(jetton_address, 'TON', amount);
-        sdk.log.info(`Best quote: ${quote.outAmount} TON via ${quote.dex}`);
+        // Read actual wallet balance — never trust DB amount
+        const walletBalance = await sdk.ton.getJettonBalance(jetton_address);
+        const sellAmount = walletBalance > 0 ? walletBalance : amount;
+        sdk.log.info(`Wallet holds ${walletBalance} tokens (DB says ${amount}). Selling ${sellAmount}`);
 
-        if (min_ton_out > 0 && quote.outAmount < min_ton_out) {
-          return {
-            success: false,
-            error: `Quote ${quote.outAmount} TON below minimum ${min_ton_out} TON`,
-          };
+        if (sellAmount <= 0) {
+          return { success: false, error: 'No tokens in wallet to sell' };
         }
 
-        const result = await sdk.ton.swap(jetton_address, 'TON', amount, {
-          slippage: 1.0, // 100% — accept any output
-        });
+        // Split into 4 trades to reduce price impact
+        const NUM_TRADES = 4;
+        const trancheSize = Math.floor(sellAmount / NUM_TRADES * 100) / 100; // truncate to 2 dp
+        const lastTranche = Math.floor((sellAmount - trancheSize * (NUM_TRADES - 1)) * 100) / 100;
+        let totalTonReceived = 0;
 
-        const tonReceived = result.outAmount;
-        sdk.log.info(`Sold! Received ${tonReceived} TON via ${result.dex}`);
+        for (let i = 0; i < NUM_TRADES; i++) {
+          const thisAmount = i < NUM_TRADES - 1 ? trancheSize : lastTranche;
+          if (thisAmount <= 0) continue;
+
+          sdk.log.info(`Trade ${i + 1}/${NUM_TRADES}: selling ${thisAmount} tokens...`);
+
+          const quote = await sdk.ton.getSwapQuote(jetton_address, 'TON', thisAmount);
+          if (!quote || quote.outAmount <= 0) {
+            sdk.log.warn(`Trade ${i + 1}: no quote available, skipping`);
+            continue;
+          }
+          sdk.log.info(`Trade ${i + 1}: quote ${quote.outAmount} TON via ${quote.dex}`);
+
+          const result = await sdk.ton.swap(jetton_address, 'TON', thisAmount, {
+            slippage: 0.50, // 50% slippage per trade
+          });
+
+          totalTonReceived += result.outAmount;
+          sdk.log.info(`Trade ${i + 1}: received ${result.outAmount} TON (total: ${totalTonReceived.toFixed(4)} TON)`);
+
+          // Brief pause between trades to let pool rebalance
+          if (i < NUM_TRADES - 1) {
+            await new Promise(r => setTimeout(r, 15000));
+          }
+        }
+
+        const tonReceived = totalTonReceived;
+        sdk.log.info(`All trades complete! Total received: ${tonReceived} TON`);
 
         // Report extraction to backend — transitions status to 'launching'
         const report = await backendPost(backend_url, `/api/migrations/${migration_id}/extracted-ton`, {
