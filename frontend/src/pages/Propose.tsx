@@ -913,18 +913,12 @@ export function Propose() {
                 </p>
               )}
               <button
-                onClick={handlePropose}
-                disabled={!preview || proposing}
-                className="phoenix-button inline-flex items-center gap-2 text-lg px-8 py-4 disabled:opacity-50"
+                disabled
+                className="phoenix-button inline-flex items-center gap-2 text-lg px-8 py-4 disabled:opacity-50 cursor-not-allowed"
               >
-                {proposing ? (
-                  <Loader2 size={20} className="animate-spin" />
-                ) : (
-                  <>
-                    Propose Migration <ArrowRight size={20} />
-                  </>
-                )}
+                Migrations Paused
               </button>
+              <p className="text-ash-500 text-sm mt-2">New migrations are temporarily disabled while we upgrade the system.</p>
             </div>
           </motion.div>
         )}
