@@ -286,7 +286,8 @@ async def delete_migration(migration_id: str, x_agent_key: str = Header(None)):
 
     db = await get_db()
     try:
-        await db.execute("DELETE FROM deposits WHERE migration_id = ?", (migration_id,))
+        for table in ['deposits', 'snapshots', 'excluded_addresses', 'topups', 'distributions']:
+            await db.execute(f"DELETE FROM {table} WHERE migration_id = ?", (migration_id,))
         result = await db.execute("DELETE FROM migrations WHERE id = ?", (migration_id,))
         await db.commit()
         if result.rowcount == 0:
