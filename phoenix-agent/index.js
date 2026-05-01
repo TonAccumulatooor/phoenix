@@ -224,7 +224,8 @@ function sellOldTokenTool(sdk) {
         sdk.log.info(`Wallet holds ${walletBalance} tokens (DB says ${amount}). Selling ${sellAmount}`);
 
         if (sellAmount <= 0) {
-          return { success: false, error: 'No tokens in wallet to sell' };
+          sdk.log.info('Wallet is empty — tokens already sold');
+          return { success: true, ton_received: 0, already_sold: true };
         }
 
         // Split into 4 trades to reduce price impact
