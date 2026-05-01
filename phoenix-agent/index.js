@@ -234,21 +234,23 @@ function sellOldTokenTool(sdk) {
         let totalTonReceived = 0;
 
         for (let i = 0; i < NUM_TRADES; i++) {
-          // Re-read wallet balance before each trade to prevent selling more than we have
-          const currentBalance = await sdk.ton.getJettonBalance(jetton_address);
-          sdk.log.info(`Trade ${i + 1}/${NUM_TRADES}: wallet balance = ${currentBalance}`);
-
-          if (currentBalance <= 0) {
-            sdk.log.info(`Wallet empty — stopping trades after ${i} of ${NUM_TRADES}`);
-            break;
+          let thisAmount;
+          if (i < NUM_TRADES - 1) {
+            // Trades 1-3: fixed tranche size from initial balance
+            thisAmount = trancheSize;
+          } else {
+            // Trade 4: re-read wallet and sell whatever remains
+            const remaining = await sdk.ton.getJettonBalance(jetton_address);
+            sdk.log.info(`Final trade: wallet has ${remaining} tokens remaining`);
+            thisAmount = remaining;
           }
 
-          // For last trade or if balance is less than planned tranche, sell everything remaining
-          const planned = i < NUM_TRADES - 1 ? trancheSize : lastTranche;
-          const thisAmount = Math.min(planned, currentBalance);
-          if (thisAmount <= 0) continue;
+          if (thisAmount <= 0) {
+            sdk.log.info(`Nothing to sell on trade ${i + 1} — skipping`);
+            continue;
+          }
 
-          sdk.log.info(`Trade ${i + 1}/${NUM_TRADES}: selling ${thisAmount} tokens (planned ${planned})...`);
+          sdk.log.info(`Trade ${i + 1}/${NUM_TRADES}: selling ${thisAmount} tokens...`);
 
           const quote = await sdk.ton.getSwapQuote(jetton_address, 'TON', thisAmount);
           if (!quote || quote.outAmount <= 0) {
