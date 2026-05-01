@@ -450,7 +450,7 @@ export function MigrationDashboard() {
             )}
 
             {/* Deposit Action */}
-            {(isDepositing || migration.status === 'qualified') && (
+            {(isDepositing || migration.status === 'qualified' || migration.status === 'late_claims') && (
               <div className="mt-6 pt-6 border-t border-ash-700/50">
                 {!walletAddress ? (
                   <button
@@ -519,7 +519,7 @@ export function MigrationDashboard() {
             )}
 
             {/* Top-up Action */}
-            {(isDepositing || migration.status === 'qualified') && walletAddress && (
+            {(isDepositing || migration.status === 'qualified' || migration.status === 'late_claims') && walletAddress && (
               <div className="mt-4 pt-4 border-t border-ash-700/50">
                 <p className="text-xs text-ash-500 mb-2">
                   Contribute TON to boost the dev buy (+10% bonus on your allocation)
