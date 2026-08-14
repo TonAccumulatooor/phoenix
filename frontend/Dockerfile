@@ -1,5 +1,6 @@
 # Stage 1: Build
-FROM node:20-alpine AS build
+# Debian-based, not Alpine: tsc segfaults under musl on kernel 6.8.
+FROM node:20-bookworm-slim AS build
 
 WORKDIR /app
 
