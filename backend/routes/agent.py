@@ -3,7 +3,7 @@ Phoenix Agent Coordination Endpoints
 =====================================
 These routes are called by Phoenix Agent to record pipeline results:
   - Extracted TON after DEX sale
-  - New token address after Groypad deploy
+  - New token address after Topblast deploy
   - Distribution execution
   - Creator reward wallet assignment
   - Mark distributions as completed
@@ -48,11 +48,11 @@ router = APIRouter(
 
 class RecordExtractionRequest(BaseModel):
     extracted_ton: float = Field(gt=0, description="Actual TON received from DEX sale")
-    dev_buy_ton: float = Field(ge=0, description="TON allocated for Groypad dev buy")
+    dev_buy_ton: float = Field(ge=0, description="GRAM allocated for Topblast dev buy")
 
 
 class RecordDeployRequest(BaseModel):
-    new_token_address: str = Field(description="Deployed Groypad meme token address")
+    new_token_address: str = Field(description="Deployed Topblast meme token address")
     agent_supply: float = Field(gt=0, description="Actual tokens acquired from bonding curve")
     dev_buy_ton: Optional[float] = Field(default=None, description="Override dev_buy_ton if not set")
 
@@ -95,11 +95,11 @@ async def record_extracted_ton(migration_id: str, req: RecordExtractionRequest):
         await db.close()
 
 
-# --- #2: Record new token address after Groypad deploy ---
+# --- #2: Record new token address after Topblast deploy ---
 
 @router.post("/{migration_id}/deployed-token")
 async def record_deployed_token(migration_id: str, req: RecordDeployRequest):
-    """Record the new token address and agent supply after Groypad deployment."""
+    """Record the new token address and agent supply after Topblast deployment."""
     if not is_valid_ton_address(req.new_token_address):
         raise HTTPException(400, f"Invalid TON address format: {req.new_token_address}")
 
@@ -405,7 +405,7 @@ async def build_metadata(migration_id: str, req: Optional[BuildMetadataRequest] 
     """
     Build a TEP-64 metadata JSON file from the migration's stored metadata
     (or from the request body as override). Saves to /uploads/ and returns
-    the URL that Phoenix Agent passes to the Groypad deploy tool.
+    the URL that Phoenix Agent passes to the Topblast deploy tool.
     """
     db = await get_db()
     try:

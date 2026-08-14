@@ -26,12 +26,13 @@ async def preview_migration(token_address: str):
     if not info:
         raise HTTPException(400, "Could not fetch jetton info")
 
-    # Reject tokens already deployed from Groypad
+    # Reject tokens already launched on the launchpad — under either brand,
+    # since Topblast-era tokens carry the new wording.
     description = (info.get("description") or "").lower()
-    if "deployed from groypad" in description:
+    if "deployed from groypad" in description or "deployed from topblast" in description:
         raise HTTPException(
             400,
-            "This token was deployed from Groypad and is not eligible for migration.",
+            "This token was launched on Topblast and is not eligible for migration.",
         )
 
     decimals = info["decimals"]

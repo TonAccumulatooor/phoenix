@@ -138,7 +138,7 @@ async function getJettonBalance(jettonMaster) {
 async function sendTON(toAddress, amountTon, payloadBase64) {
   /**
    * Send TON with an optional pre-built BOC payload (base64-encoded cell).
-   * Used by Groypad deploy (sends opcode cell as body).
+   * Used by Topblast deploy (sends opcode cell as body).
    */
   const seqno = await wallet.getSeqno();
   const { Cell } = await import('@ton/core');
