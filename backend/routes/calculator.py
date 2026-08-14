@@ -12,9 +12,9 @@ from services.conversion import (
     calculate_all_distributions,
 )
 from services.lp_estimator import estimate_extraction
-from services.groypad_curve import estimate_dev_buy
+from services.topblast_curve import estimate_dev_buy
 from services.ton_api import get_jetton_info, estimate_circulating_supply, get_pool_reserves, get_phx_balance
-from config import FULL_DEV_BUY_TON, NEW_TOKEN_SUPPLY, THRESHOLD_PERCENT, normalize_address
+from config import FULL_LAUNCH_COST_GRAM, NEW_TOKEN_SUPPLY, THRESHOLD_PERCENT, normalize_address
 
 router = APIRouter(prefix="/api/calculator", tags=["calculator"])
 

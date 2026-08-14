@@ -28,7 +28,7 @@ type Section =
   | 'treasury'
   | 'groyper-nft'
   | 'phoenix-agent'
-  | 'groypad'
+  | 'topblast'
   | 'voting'
   | 'phx-token'
   | 'faq';
@@ -40,7 +40,7 @@ const NAV: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'treasury', label: 'Treasury & LP', icon: <Coins size={16} /> },
   { id: 'groyper-nft', label: 'Groyper NFT', icon: <Crown size={16} /> },
   { id: 'phoenix-agent', label: 'Phoenix Agent', icon: <Zap size={16} /> },
-  { id: 'groypad', label: 'Groypad Launch', icon: <TrendingUp size={16} /> },
+  { id: 'topblast', label: 'Topblast Launch', icon: <TrendingUp size={16} /> },
   { id: 'voting', label: 'Governance & Voting', icon: <Vote size={16} /> },
   { id: 'phx-token', label: 'PHX Token', icon: <Flame size={16} /> },
   { id: 'faq', label: 'FAQ', icon: <AlertTriangle size={16} /> },
@@ -139,14 +139,14 @@ export function Docs() {
                   Phoenix is a trustless token migration platform built on the TON blockchain. It enables any
                   community to migrate their existing token to a fresh launch on{' '}
                   <a href="https://groypfi.io/launchpad" target="_blank" rel="noopener noreferrer" className="text-ember-400 hover:underline">
-                    Groypad
+                    Topblast
                   </a>{' '}
                   — no leader required, no trust needed.
                 </p>
                 <p>
                   The core mechanism is simple: if 51% of a token's circulating supply is deposited into the
                   Phoenix Vault within the deposit window, the migration qualifies. The Phoenix Agent then
-                  automatically sells the old tokens, launches a new token on Groypad, and distributes new
+                  automatically sells the old tokens, launches a new token on Topblast, and distributes new
                   tokens proportionally to all depositors.
                 </p>
                 <p>
@@ -178,7 +178,7 @@ export function Docs() {
                     step: '3',
                     title: 'LP Extraction & Launch',
                     icon: <Zap size={18} />,
-                    desc: 'The Phoenix Agent sells deposited tokens into existing LP pools to extract TON. That TON is used as a dev buy on Groypad to launch the new token. With a full 1,050 TON dev buy, the Agent acquires ~76% of the new token supply on the bonding curve.',
+                    desc: 'The Phoenix Agent sells deposited tokens into existing LP pools to extract GRAM. That GRAM is used as a dev buy on Topblast to launch the new token. With a full 1,050 TON dev buy, the Agent acquires ~76% of the new token supply on the bonding curve.',
                   },
                   {
                     step: '4',
@@ -196,7 +196,7 @@ export function Docs() {
                     step: '6',
                     title: 'Creator Reward Voting',
                     icon: <Vote size={18} />,
-                    desc: 'Depositors vote (weighted by deposit amount) on who receives the 1.05% Groypad creator reward fees. The proposer can also designate a community wallet for creator fees at proposal time.',
+                    desc: 'Depositors vote (weighted by deposit amount) on who receives the Topblast creator reward fees. The proposer can also designate a community wallet for creator fees at proposal time.',
                   },
                 ].map((item) => (
                   <div key={item.step} className="phoenix-card p-5 flex gap-4">
@@ -383,7 +383,7 @@ export function Docs() {
                   {[
                     { step: '1', label: 'Sell old tokens into LP to extract TON' },
                     { step: '2', label: 'Prepare metadata for new token (name, symbol, image, description)' },
-                    { step: '3', label: 'Deploy new token on Groypad via dev buy' },
+                    { step: '3', label: 'Deploy new token on Topblast via dev buy' },
                     { step: '4', label: 'Discover the deployed contract address on-chain' },
                     { step: '5', label: 'Submit creator fee claim to GroypFi bot for community wallet' },
                     { step: '6', label: 'Distribute new tokens to all depositors by tier' },
@@ -405,29 +405,29 @@ export function Docs() {
               </div>
             </section>
 
-            {/* Groypad */}
-            <section id="groypad">
-              <SectionHeading icon={<TrendingUp size={24} />} title="Groypad Launch Mechanics" />
+            {/* Topblast */}
+            <section id="topblast">
+              <SectionHeading icon={<TrendingUp size={24} />} title="Topblast Launch Mechanics" />
               <div className="phoenix-card p-6 space-y-4">
                 <p className="text-sm text-ash-300 leading-relaxed">
                   New tokens are launched on{' '}
                   <a href="https://groypfi.io/launchpad" target="_blank" rel="noopener noreferrer" className="text-ember-400 hover:underline inline-flex items-center gap-1">
-                    Groypad <ExternalLink size={12} />
+                    Topblast <ExternalLink size={12} />
                   </a>, a TON-native token launchpad with a bonding curve mechanism. The Phoenix Agent
                   performs a "dev buy" — the first purchase on the bonding curve — using the extracted TON.
                 </p>
                 <p className="text-sm text-ash-300 leading-relaxed">
-                  Groypad uses a square-root bonding curve. Early buyers get significantly more tokens per TON.
+                  Topblast uses a square-root bonding curve. Early buyers get significantly more tokens per GRAM.
                   A full dev buy of 1,050 TON acquires approximately 760,000,000 tokens (76% of the 1B supply),
                   which immediately graduates the token to a DEX listing.
                 </p>
                 <p className="text-sm text-ash-300 leading-relaxed">
-                  Tokens already deployed from Groypad (identifiable by "Deployed from Groypad" in their metadata)
+                  Tokens already deployed from Topblast (identifiable by "Deployed from Topblast" in their metadata)
                   are automatically ineligible for migration — they can't be relaunched on the same platform.
                 </p>
               </div>
               <div className="phoenix-card p-6 mt-4">
-                <h3 className="text-base font-display font-bold text-white mb-3">Groypad Parameters</h3>
+                <h3 className="text-base font-display font-bold text-white mb-3">Topblast Parameters</h3>
                 <Param label="Graduation Threshold" value="1,050 TON" />
                 <Param label="Max Curve Supply" value="760,000,000 tokens" />
                 <Param label="Total Supply" value="1,000,000,000 tokens" />
@@ -441,14 +441,14 @@ export function Docs() {
               <SectionHeading icon={<Vote size={24} />} title="Governance & Voting" />
               <div className="phoenix-card p-6 space-y-4">
                 <p className="text-sm text-ash-300 leading-relaxed">
-                  After a successful migration, the community votes on who should receive the 1.05% Groypad
+                  After a successful migration, the community votes on who should receive the 1.05% Topblast
                   creator reward fees. Voting is weighted by deposit amount — larger depositors have more influence.
                 </p>
                 <p className="text-sm text-ash-300 leading-relaxed">
                   The proposer can also specify a <strong className="text-white">Creator Fee Wallet</strong> at
                   proposal time. This is typically a community-controlled multisig wallet. After launch, the
                   Phoenix Agent submits this wallet to the GroypFi fee claim bot, which is reviewed and approved
-                  by the Groypad team.
+                  by the Topblast team.
                 </p>
                 <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20">
                   <div className="flex items-center gap-2 mb-1">
@@ -527,7 +527,7 @@ export function Docs() {
                 />
                 <FaqItem
                   q="What tokens are eligible for migration?"
-                  a="Any TON jetton with existing liquidity on DeDust or STON.fi can be proposed. Tokens that were already deployed from Groypad are automatically ineligible — they can't be relaunched on the same platform."
+                  a="Any TON jetton with existing liquidity on DeDust or STON.fi can be proposed. Tokens that were already deployed from Topblast are automatically ineligible — they can't be relaunched on the same platform."
                 />
                 <FaqItem
                   q="What is the top-up bonus?"
@@ -535,7 +535,7 @@ export function Docs() {
                 />
                 <FaqItem
                   q="How does the creator fee wallet work?"
-                  a="When proposing a migration, you can specify a wallet address to receive Groypad's 1.05% creator trading fees. After launch, the Phoenix Agent submits this wallet to GroypFi's fee claim bot. The Groypad team reviews and approves the transfer."
+                  a="When proposing a migration, you can specify a wallet address to receive Topblast's creator trading fees (1.1% at the 3% fee tier). After launch, the Phoenix Agent submits this wallet to GroypFi's fee claim bot. The Topblast team reviews and approves the transfer."
                 />
                 <FaqItem
                   q="Do I need a Groyper NFT to use Phoenix?"

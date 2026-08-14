@@ -7,11 +7,10 @@ from config import (
     TIER2_MULTIPLIER,
     TIER3_MULTIPLIER,
     TOPUP_BONUS_MULTIPLIER,
-    FULL_DEV_BUY_TON,
     FULL_DEV_BUY_SUPPLY_PERCENT,
-    GROYPAD_GRADUATION_TON,
-    GROYPAD_MAX_CURVE_SUPPLY,
-    GROYPAD_TRADE_FEE,
+    TOPBLAST_GRADUATION_GRAM,
+    TOPBLAST_MAX_CURVE_SUPPLY,
+    TOPBLAST_DEFAULT_TRADE_FEE,
     TREASURY_LP_SEED_AMOUNT,
     TREASURY_NFT_AIRDROP_AMOUNT,
     PHX_BOOST_TIER1_MIN,
@@ -27,16 +26,19 @@ def compute_base_ratio(old_total_supply: float) -> float:
     return NEW_TOKEN_SUPPLY / old_total_supply
 
 
-def estimate_agent_supply(dev_buy_ton: float) -> float:
+def estimate_agent_supply(
+    dev_buy_gram: float,
+    trade_fee: float = TOPBLAST_DEFAULT_TRADE_FEE,
+) -> float:
     """
-    Estimate tokens acquired from Groypad's linear bonding curve.
-    price(s) = α + β·s with α≈0 → cost ∝ S² → S = MAX_SUPPLY × √(TON / GRADUATION_TON)
+    Estimate tokens acquired from Topblast's bonding curve.
+    price(s) = α + β·s with α≈0 → cost ∝ S² → S = MAX_SUPPLY × √(GRAM / GRADUATION_GRAM)
     """
-    effective_ton = dev_buy_ton * (1 - GROYPAD_TRADE_FEE)
-    if effective_ton <= 0:
+    effective_gram = dev_buy_gram * (1 - trade_fee)
+    if effective_gram <= 0:
         return 0
-    capped = min(effective_ton, GROYPAD_GRADUATION_TON)
-    return GROYPAD_MAX_CURVE_SUPPLY * math.sqrt(capped / GROYPAD_GRADUATION_TON)
+    capped = min(effective_gram, TOPBLAST_GRADUATION_GRAM)
+    return TOPBLAST_MAX_CURVE_SUPPLY * math.sqrt(capped / TOPBLAST_GRADUATION_GRAM)
 
 
 def classify_deposit(

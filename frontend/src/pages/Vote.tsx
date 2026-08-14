@@ -64,7 +64,7 @@ export function Vote() {
           Creator Rewards <span className="phoenix-gradient-text">Vote</span>
         </h1>
         <p className="text-ash-400 mb-8">
-          Vote for who should receive the 1.05% Groypad creator rewards for this migration.
+          Vote for who should receive the Topblast creator rewards for this migration.
           Votes are weighted by your NEWMEME token balance.
         </p>
 

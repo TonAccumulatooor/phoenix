@@ -44,7 +44,7 @@ export function statusLabel(status: string, tokenSymbol?: string): string {
     depositing: 'Collecting Deposits',
     qualified: 'Threshold Met',
     selling: `Selling ${tokenSymbol || 'Tokens'}`,
-    launching: 'Launching on Groypad',
+    launching: 'Launching on Topblast',
     distributing: 'Distributing Tokens',
     late_claims: 'Late Claims Open',
     voting: 'Creator Vote Active',

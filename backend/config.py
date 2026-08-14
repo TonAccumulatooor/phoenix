@@ -64,8 +64,8 @@ TIER3_MULTIPLIER = 0.5
 TOPUP_BONUS_MULTIPLIER = 1.10
 
 NEW_TOKEN_SUPPLY = 1_000_000_000
-FULL_DEV_BUY_TON = 1050
-FULL_DEV_BUY_SUPPLY_PERCENT = 0.76
+FULL_DEV_BUY_GRAM = 1500
+FULL_DEV_BUY_SUPPLY_PERCENT = 0.70
 
 PROPOSAL_FEE_USD = 25
 
@@ -87,10 +87,25 @@ PHX_BOOST_TIER1_BONUS = 0.05        # +5% NEWTOKEN
 PHX_BOOST_TIER2_MIN = 10_000_000    # 1% of 1B supply
 PHX_BOOST_TIER2_BONUS = 0.10        # +10% NEWTOKEN
 
-GROYPAD_GRADUATION_TON = 1050
-GROYPAD_MAX_CURVE_SUPPLY = 760_000_000
-GROYPAD_TRADE_FEE = 0.03
-GROYPAD_TOTAL_SUPPLY = 1_000_000_000
+# --- Topblast launchpad (formerly Groypad) ---
+# Factory v4: EQAmkd4Pd_xgUW4b9MLrygf0SOfR2EUVa_iCtVWGnYB2hItG
+TOPBLAST_GRADUATION_GRAM = 1500          # raised on the curve to graduate
+TOPBLAST_MIGRATION_FEE_GRAM = 50         # charged on graduation, on top of the raise
+TOPBLAST_CURVE_SUPPLY_PERCENT = 0.70     # share of supply sold on the curve
+TOPBLAST_TOTAL_SUPPLY = 1_000_000_000
+TOPBLAST_MAX_CURVE_SUPPLY = int(TOPBLAST_TOTAL_SUPPLY * TOPBLAST_CURVE_SUPPLY_PERCENT)  # 700M
+
+# Trade fee is creator-selected. Topblast offers 0.25%/1%/3%; Phoenix migrations
+# are restricted to the two tiers that pay meaningful creator rewards, since
+# those rewards are what fund the new community's LP owner.
+TOPBLAST_FEE_TIERS = {
+    0.01: 0.0035,   # 1% trade fee → 0.35% creator rewards
+    0.03: 0.011,    # 3% trade fee → 1.10% creator rewards
+}
+TOPBLAST_DEFAULT_TRADE_FEE = 0.03
+
+# Total GRAM the agent must spend to graduate a token, fee included.
+FULL_LAUNCH_COST_GRAM = TOPBLAST_GRADUATION_GRAM + TOPBLAST_MIGRATION_FEE_GRAM  # 1550
 
 KNOWN_BURN_ADDRESSES = [
     "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",

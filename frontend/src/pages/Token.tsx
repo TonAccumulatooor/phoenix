@@ -18,7 +18,7 @@ const UTILITY = [
   {
     icon: <TrendingUp size={24} />,
     title: 'Creator Rewards',
-    desc: 'Phoenix receives 1.05% of all PHX trading volume on Groypad, funding platform operations.',
+    desc: 'Phoenix receives creator rewards on all PHX trading volume on Topblast, funding platform operations.',
   },
   {
     icon: <Shield size={24} />,

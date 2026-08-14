@@ -25,10 +25,15 @@ import {
   Crown,
 } from 'lucide-react';
 
-const GROYPAD_GRADUATION_TON = 1050;
-const GROYPAD_MAX_CURVE_SUPPLY = 760_000_000;
-const GROYPAD_TOTAL_SUPPLY = 1_000_000_000;
-const GROYPAD_TRADE_FEE = 0.03;
+// Topblast (formerly Groypad) launchpad curve. Mirrors backend/config.py —
+// keep the two in sync.
+const TOPBLAST_GRADUATION_GRAM = 1500;      // raised on the curve to graduate
+const TOPBLAST_MIGRATION_FEE_GRAM = 50;     // charged on graduation, on top
+const TOPBLAST_TOTAL_SUPPLY = 1_000_000_000;
+const TOPBLAST_MAX_CURVE_SUPPLY = 700_000_000;  // 70% sold on the curve
+const TOPBLAST_TRADE_FEE = 0.03;            // 3% tier → 1.1% creator rewards
+// Total the agent must extract to graduate a token, fee included.
+const FULL_LAUNCH_COST_GRAM = TOPBLAST_GRADUATION_GRAM + TOPBLAST_MIGRATION_FEE_GRAM;
 
 function calcLpExtraction(
   depositAmount: number,
@@ -51,25 +56,27 @@ function calcLpExtraction(
 }
 
 function calcDevBuy(tonAmount: number) {
-  const effectiveTon = tonAmount * (1 - GROYPAD_TRADE_FEE);
-  if (effectiveTon <= 0) {
-    return { tokensAcquired: 0, supplyPercent: 0, effectiveTon: 0, feeTon: 0, graduates: false, gradProgress: 0 };
+  const effectiveGram = tonAmount * (1 - TOPBLAST_TRADE_FEE);
+  if (effectiveGram <= 0) {
+    return { tokensAcquired: 0, supplyPercent: 0, effectiveGram: 0, feeTon: 0, graduates: false, gradProgress: 0 };
   }
-  const capped = Math.min(effectiveTon, GROYPAD_GRADUATION_TON);
-  const tokens = GROYPAD_MAX_CURVE_SUPPLY * Math.sqrt(capped / GROYPAD_GRADUATION_TON);
+  const capped = Math.min(effectiveGram, TOPBLAST_GRADUATION_GRAM);
+  const tokens = TOPBLAST_MAX_CURVE_SUPPLY * Math.sqrt(capped / TOPBLAST_GRADUATION_GRAM);
   return {
     tokensAcquired: tokens,
-    supplyPercent: (tokens / GROYPAD_TOTAL_SUPPLY) * 100,
-    effectiveTon,
-    feeTon: tonAmount * GROYPAD_TRADE_FEE,
-    graduates: tonAmount >= GROYPAD_GRADUATION_TON,
-    gradProgress: Math.min(100, (tonAmount / GROYPAD_GRADUATION_TON) * 100),
+    supplyPercent: (tokens / TOPBLAST_TOTAL_SUPPLY) * 100,
+    effectiveGram,
+    feeTon: tonAmount * TOPBLAST_TRADE_FEE,
+    // Measured against the post-fee amount, which is what actually buys curve
+    // supply — comparing the gross amount overstates graduation.
+    graduates: effectiveGram >= TOPBLAST_GRADUATION_GRAM,
+    gradProgress: Math.min(100, (effectiveGram / TOPBLAST_GRADUATION_GRAM) * 100),
   };
 }
 
 function getAssessment(tonExtracted: number) {
-  if (tonExtracted >= GROYPAD_GRADUATION_TON) return 'full_launch';
-  if (tonExtracted >= GROYPAD_GRADUATION_TON * 0.5) return 'flexible_launch';
+  if (tonExtracted >= FULL_LAUNCH_COST_GRAM) return 'full_launch';
+  if (tonExtracted >= FULL_LAUNCH_COST_GRAM * 0.5) return 'flexible_launch';
   if (tonExtracted >= 200) return 'minimum_viable';
   if (tonExtracted > 0) return 'unlikely';
   return 'no_liquidity';
@@ -93,14 +100,14 @@ function calcViabilityScore(
   else if (poolTonReserve < 100) liqScore = 3;
   else if (poolTonReserve < 300) liqScore = 8;
   else if (poolTonReserve < 500) liqScore = 12;
-  else if (poolTonReserve < 1050) liqScore = 16;
+  else if (poolTonReserve < FULL_LAUNCH_COST_GRAM) liqScore = 16;
   else if (poolTonReserve < 3000) liqScore = 25;
   else if (poolTonReserve < 10000) liqScore = 22;
   else liqScore = 18;
 
   let gradScore: number;
-  if (tonExtracted >= 1050) gradScore = 30;
-  else if (tonExtracted > 0) gradScore = (tonExtracted / 1050) * 28;
+  if (tonExtracted >= FULL_LAUNCH_COST_GRAM) gradScore = 30;
+  else if (tonExtracted > 0) gradScore = (tonExtracted / FULL_LAUNCH_COST_GRAM) * 28;
   else gradScore = 0;
 
   let commScore: number;
@@ -145,8 +152,8 @@ function getWeakestInsight(breakdown: { label: string; score: number; max: numbe
   }
   const insights: Record<string, string> = {
     'Circulating Supply': 'Most supply is locked in LP/contracts — less available for vault deposits.',
-    'Pool Liquidity': 'Pool lacks sufficient TON depth — extraction will be limited.',
-    'Graduation Potential': 'Extracted TON unlikely to fund full Groypad graduation without community top-up.',
+    'Pool Liquidity': 'Pool lacks sufficient GRAM depth — extraction will be limited.',
+    'Graduation Potential': 'Extracted GRAM unlikely to fund full Topblast graduation without community top-up.',
     'Community Size': 'Small holder base may struggle to reach 51% deposit threshold.',
   };
   return insights[weakest.label];
@@ -305,7 +312,7 @@ export function Propose() {
     const lp = calcLpExtraction(depositAmount, poolTon, poolToken, dexFee);
     const devBuy = calcDevBuy(lp.tonExtracted);
     const assessment = getAssessment(lp.tonExtracted);
-    const topupNeeded = Math.max(0, GROYPAD_GRADUATION_TON - lp.tonExtracted);
+    const topupNeeded = Math.max(0, FULL_LAUNCH_COST_GRAM - lp.tonExtracted);
 
     const viability = calcViabilityScore(
       preview.circulating_percent,
@@ -583,22 +590,22 @@ export function Propose() {
                 <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
                   <AlertTriangle size={16} />
                   Community top-up of ~{formatNumber(Math.round(liveCalc.topupNeeded * 100) / 100)}{' '}
-                  TON recommended for a full 1050 TON dev buy.
+                  GRAM recommended for a full 1550 GRAM launch (1500 curve + 50 fee).
                 </div>
               )}
             </div>
 
-            {/* Groypad Dev Buy Estimate */}
+            {/* Topblast Dev Buy Estimate */}
             <div className="phoenix-card p-6">
               <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <Rocket size={18} className="text-ember-500" />
-                Groypad Dev Buy Estimate
+                Topblast Dev Buy Estimate
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <div className="text-xs text-ash-500 mb-1">TON Into Curve</div>
                   <div className="font-mono text-white">
-                    {formatNumber(Math.round(liveCalc.devBuy.effectiveTon * 100) / 100)} TON
+                    {formatNumber(Math.round(liveCalc.devBuy.effectiveGram * 100) / 100)} TON
                   </div>
                 </div>
                 <div>
@@ -614,7 +621,7 @@ export function Propose() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-ash-500 mb-1">Groypad Fee (3%)</div>
+                  <div className="text-xs text-ash-500 mb-1">Topblast Fee (3%)</div>
                   <div className="font-mono text-ash-400">
                     {formatNumber(Math.round(liveCalc.devBuy.feeTon * 100) / 100)} TON
                   </div>
@@ -643,7 +650,7 @@ export function Propose() {
                 </div>
               ) : (
                 <p className="mt-3 text-xs text-ash-500">
-                  Based on Groypad's linear bonding curve (price = α + β·s). Dev buy is the first
+                  Based on Topblast's linear bonding curve (price = α + β·s). Dev buy is the first
                   purchase at launch — early buys get significantly more tokens per TON.
                 </p>
               )}
@@ -693,7 +700,7 @@ export function Propose() {
                 New Token Details
               </h3>
               <p className="text-xs text-ash-500 mb-5">
-                Configure the reborn token's metadata for Groypad launch. Name and symbol are
+                Configure the reborn token's metadata for Topblast launch. Name and symbol are
                 pre-filled from the original token.
               </p>
 

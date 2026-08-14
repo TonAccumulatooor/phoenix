@@ -1,5 +1,6 @@
 from services.ton_api import estimate_pool_liquidity
-from config import FULL_DEV_BUY_TON
+# The agent must cover the curve raise AND the migration fee to graduate.
+from config import FULL_LAUNCH_COST_GRAM
 
 
 async def estimate_extraction(
@@ -25,7 +26,7 @@ async def estimate_extraction(
             "estimated_extraction_ton": 0,
             "slippage_estimate_percent": 100,
             "dev_buy_assessment": "no_liquidity",
-            "recommended_topup_ton": FULL_DEV_BUY_TON,
+            "recommended_topup_ton": FULL_LAUNCH_COST_GRAM,
             "token_price_ton": 0,
             "pool_ton_reserve": 0,
             "pool_token_reserve": 0,
@@ -58,18 +59,18 @@ async def estimate_extraction(
     if naive_value > 0:
         slippage = ((naive_value - ton_extracted) / naive_value) * 100
 
-    if ton_extracted >= FULL_DEV_BUY_TON:
+    if ton_extracted >= FULL_LAUNCH_COST_GRAM:
         assessment = "full_launch"
         recommended_topup = 0
-    elif ton_extracted >= FULL_DEV_BUY_TON * 0.5:
+    elif ton_extracted >= FULL_LAUNCH_COST_GRAM * 0.5:
         assessment = "flexible_launch"
-        recommended_topup = FULL_DEV_BUY_TON - ton_extracted
+        recommended_topup = FULL_LAUNCH_COST_GRAM - ton_extracted
     elif ton_extracted >= 200:
         assessment = "minimum_viable"
-        recommended_topup = FULL_DEV_BUY_TON - ton_extracted
+        recommended_topup = FULL_LAUNCH_COST_GRAM - ton_extracted
     else:
         assessment = "unlikely"
-        recommended_topup = FULL_DEV_BUY_TON - ton_extracted
+        recommended_topup = FULL_LAUNCH_COST_GRAM - ton_extracted
 
     return {
         "estimated_extraction_ton": round(ton_extracted, 2),

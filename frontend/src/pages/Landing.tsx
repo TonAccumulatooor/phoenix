@@ -35,13 +35,13 @@ const STEPS = [
   {
     num: '03',
     title: 'Phoenix Agent Launches',
-    desc: 'Old tokens are sold into LP to extract TON. Phoenix Agent uses that TON to launch the new token on Groypad.',
+    desc: 'Old tokens are sold into LP to extract GRAM. Phoenix Agent uses that GRAM to launch the new token on Topblast.',
     icon: <Zap size={24} />,
   },
   {
     num: '04',
     title: 'Token Rebirth',
-    desc: 'New tokens are distributed proportionally to depositors. LP pair is seeded on DeDust. The project\'s new token now receives 1.05% creator rewards from Groypad.',
+    desc: 'New tokens are distributed proportionally to depositors. LP pair is seeded on DeDust. The project\'s new token now receives 1.05% creator rewards from Topblast.',
     icon: <Coins size={24} />,
   },
 ];
@@ -60,7 +60,7 @@ const FEATURES = [
   {
     icon: <Vote size={28} />,
     title: 'Community Governance',
-    desc: 'Holder-weighted voting determines who receives the 1.05% Groypad creator rewards.',
+    desc: 'Holder-weighted voting determines who receives the Topblast creator rewards.',
   },
   {
     icon: <Flame size={28} />,
@@ -131,7 +131,7 @@ export function Landing() {
               className="text-lg text-ash-300 mb-10 leading-relaxed max-w-lg"
             >
               The trusted migration platform for any TON token.
-              Fresh launch on Groypad — no leader required, no trust needed.
+              Fresh launch on Topblast — no leader required, no trust needed.
             </motion.p>
 
             <motion.div
