@@ -17,21 +17,28 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_VAULT_ADDRESS: ${VITE_VAULT_ADDRESS}
-        CACHE_BUST: "3"
+        # Baked into the bundle at build time by Vite. Sourced from
+        # backend/.env via the `env_file` on this service.
+        VITE_VAULT_ADDRESS: ${PHOENIX_VAULT_ADDRESS}
+        CACHE_BUST: "4"
     restart: unless-stopped
+    env_file: ./backend/.env
     environment:
       PORT: 80
       BACKEND_URL: backend:8000
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
     depends_on:
       - backend
 
   agent:
     build: ./phoenix-agent
     restart: unless-stopped
-    env_file: ./phoenix-agent/.env
+    env_file: ./backend/.env
     environment:
       BACKEND_URL: http://backend:8000
     depends_on:
