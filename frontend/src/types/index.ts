@@ -27,6 +27,9 @@ export interface Migration {
   dev_buy_ton: number | null;
   agent_supply: number | null;
   creator_reward_wallet: string | null;
+  // Wallet that owns the new LP and claims its fees. Set by the proposer at
+  // submission and immutable thereafter.
+  creator_fee_wallet: string | null;
   holder_count: number;
   depositor_count: number;
   created_at: string;

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useTonConnectUI, useTonAddress } from '@tonconnect/ui-react';
 import { api } from '../lib/api';
-import { formatNumber, assessmentLabel, shortenAddress } from '../lib/utils';
+import { formatNumber, assessmentLabel, shortenAddress, TON_ADDRESS_RE } from '../lib/utils';
 import {
   Search,
   AlertTriangle,
@@ -183,6 +183,8 @@ export function Propose() {
   const [socialTwitter, setSocialTwitter] = useState('');
   const [socialWebsite, setSocialWebsite] = useState('');
   const [creatorFeeWallet, setCreatorFeeWallet] = useState('');
+  // Required and permanent: depositors judge the proposer by this address.
+  const isValidLpOwner = TON_ADDRESS_RE.test(creatorFeeWallet.trim());
 
   // Groyper NFT fee waiver check
   const [nftHolder, setNftHolder] = useState<{ holds: boolean; count: number } | null>(null);
@@ -260,6 +262,10 @@ export function Propose() {
       tonConnectUI.openModal();
       return;
     }
+    if (!isValidLpOwner) {
+      setError('A valid LP owner wallet is required — it cannot be changed later.');
+      return;
+    }
     setProposing(true);
     setError('');
     try {
@@ -278,7 +284,7 @@ export function Propose() {
           twitter: socialTwitter.trim() || undefined,
           website: socialWebsite.trim() || undefined,
         },
-        creator_fee_wallet: creatorFeeWallet.trim() || undefined,
+        creator_fee_wallet: creatorFeeWallet.trim(),
       });
       navigate(`/migration/${result.migration_id}`);
     } catch (e: any) {
@@ -859,24 +865,33 @@ export function Propose() {
               </div>
             </div>
 
-            {/* Creator Fee Wallet */}
+            {/* LP Owner Wallet */}
             <div className="phoenix-card p-6">
               <h3 className="text-lg font-semibold text-white mb-1 flex items-center gap-2">
                 <Target size={18} className="text-ember-500" />
-                Creator Fee Wallet
+                LP Owner Wallet
+                <span className="text-pyre text-sm">*</span>
               </h3>
               <p className="text-xs text-ash-500 mb-4">
-                After launch on Groypad, the creator earns trading fees. Provide the wallet
-                address where these fees should be sent. This should be a community-controlled wallet.
+                After graduation on Topblast, this wallet owns the liquidity pool and claims
+                its trading fees. It should be a community-controlled wallet.
               </p>
+              <div className="mb-4 px-4 py-3 rounded-lg bg-ember-500/10 border border-ember-500/25">
+                <p className="text-xs text-ash-300 leading-relaxed">
+                  <strong className="text-white">This is permanent.</strong> The address is
+                  shown publicly on the migration page and cannot be changed after you propose.
+                  Holders decide whether to deposit based on it — if they don't back this
+                  wallet, the migration never reaches 51% and nothing happens.
+                </p>
+              </div>
               <input
                 type="text"
                 value={creatorFeeWallet}
                 onChange={(e) => setCreatorFeeWallet(e.target.value)}
-                placeholder="EQ... or UQ... (community wallet for creator fees)"
+                placeholder="EQ... or UQ... (community wallet for LP fees)"
                 className="phoenix-input text-sm font-mono"
               />
-              {creatorFeeWallet && !/^(0:[0-9a-fA-F]{64}|[EU]Q[A-Za-z0-9_\-]{46})$/.test(creatorFeeWallet.trim()) && (
+              {creatorFeeWallet && !isValidLpOwner && (
                 <div className="mt-2 flex items-center gap-2 text-pyre text-xs">
                   <AlertTriangle size={14} />
                   Invalid TON address format
@@ -914,6 +929,8 @@ export function Propose() {
               )}
               <button
                 onClick={handlePropose}
+                // Still paused: the Topblast v4 deploy path is not wired up yet.
+                // Flip to `!MIGRATIONS_ENABLED || !canPropose || proposing` to re-enable.
                 disabled={true}
                 className="phoenix-button inline-flex items-center gap-2 text-lg px-8 py-4 disabled:opacity-50 cursor-not-allowed"
               >
@@ -926,6 +943,11 @@ export function Propose() {
                 )}
               </button>
               <p className="text-ash-500 text-sm mt-2">New migrations are temporarily disabled while we upgrade the system.</p>
+              {!isValidLpOwner && (
+                <p className="text-pyre text-xs mt-3">
+                  A valid LP owner wallet is required to propose.
+                </p>
+              )}
             </div>
           </motion.div>
         )}

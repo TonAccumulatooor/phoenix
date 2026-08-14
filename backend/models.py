@@ -48,7 +48,15 @@ class ProposeRequest(BaseModel):
     new_token_description: Optional[str] = None
     new_token_image: Optional[str] = None
     socials: Optional[SocialLinks] = None
-    creator_fee_wallet: Optional[str] = None
+    # The wallet that owns the new LP and collects its trading fees.
+    # Required: naming it is the proposer's public commitment as leader, and
+    # depositors weigh it before committing. Locked once the first deposit lands.
+    creator_fee_wallet: str
+
+    @field_validator("creator_fee_wallet")
+    @classmethod
+    def validate_creator_fee_wallet(cls, v: str) -> str:
+        return _validate_ton_address(v)
 
 
 class DepositRecord(BaseModel):

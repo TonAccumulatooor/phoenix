@@ -26,6 +26,7 @@ import {
   ChevronUp,
   Copy,
   Check,
+  Crown,
 } from 'lucide-react';
 import type { Migration, WalletAllocation } from '../types';
 
@@ -282,6 +283,34 @@ export function MigrationDashboard() {
               </div>
             </div>
           </div>
+
+          {/* The proposer's public commitment. Depositors weigh this before
+              committing — backing the migration means backing this wallet. */}
+          {migration.creator_fee_wallet && (
+            <div className="mt-6 pt-6 border-t border-ash-700/50">
+              <div className="flex items-start gap-3">
+                <Crown size={16} className="text-gold mt-0.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-ash-500 mb-1">
+                    LP Owner — claims trading fees after graduation
+                  </div>
+                  <a
+                    href={`https://tonviewer.com/${migration.creator_fee_wallet}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-sm text-white hover:text-ember-400 transition-colors break-all"
+                  >
+                    {migration.creator_fee_wallet}
+                  </a>
+                  <p className="text-xs text-ash-500 mt-2 leading-relaxed">
+                    Set by the proposer and permanent for this migration. Depositing is
+                    how you back it — if the community doesn't, the 51% threshold is
+                    never reached and no migration happens.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Qualified countdown banner */}

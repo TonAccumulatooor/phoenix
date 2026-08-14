@@ -1,3 +1,10 @@
+// Matches both raw (0:hex64) and user-friendly (EQ/UQ base64) TON addresses.
+export const TON_ADDRESS_RE = /^(0:[0-9a-fA-F]{64}|[EU]Q[A-Za-z0-9_\-]{46})$/;
+
+export function isValidTonAddress(addr: string): boolean {
+  return TON_ADDRESS_RE.test(addr.trim());
+}
+
 export function shortenAddress(addr: string, chars = 4): string {
   if (!addr) return '';
   return `${addr.slice(0, chars + 2)}...${addr.slice(-chars)}`;

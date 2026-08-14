@@ -149,6 +149,20 @@ CREATE TABLE IF NOT EXISTS monitor_state (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- The LP owner wallet is the proposer's public commitment as leader. Holders
+-- deposit on the strength of it, so it must not change underneath them: a
+-- proposer could otherwise attract 51% with one wallet and swap in another.
+-- Enforced here rather than only in the route, so no future code path can
+-- quietly break the guarantee.
+CREATE TRIGGER IF NOT EXISTS lock_creator_fee_wallet
+BEFORE UPDATE OF creator_fee_wallet ON migrations
+FOR EACH ROW
+WHEN OLD.creator_fee_wallet IS NOT NULL
+     AND NEW.creator_fee_wallet IS NOT OLD.creator_fee_wallet
+BEGIN
+    SELECT RAISE(ABORT, 'creator_fee_wallet is immutable once set');
+END;
 """
 
 

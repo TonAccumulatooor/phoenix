@@ -55,12 +55,11 @@ async def propose_migration(req: ProposeRequest):
 
     socials_json = json.dumps(req.socials.model_dump(exclude_none=True)) if req.socials else None
 
-    # Validate creator fee wallet if provided
-    creator_fee_wallet = None
-    if req.creator_fee_wallet:
-        if not is_valid_ton_address(req.creator_fee_wallet):
-            raise HTTPException(400, f"Invalid creator fee wallet address: {req.creator_fee_wallet}")
-        creator_fee_wallet = req.creator_fee_wallet
+    # The LP owner wallet is required — it is the proposer's public commitment
+    # as leader of the new community, and depositors judge it before depositing.
+    if not is_valid_ton_address(req.creator_fee_wallet):
+        raise HTTPException(400, f"Invalid LP owner wallet address: {req.creator_fee_wallet}")
+    creator_fee_wallet = req.creator_fee_wallet
 
     db = await get_db()
     try:

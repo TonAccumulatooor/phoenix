@@ -52,7 +52,7 @@ export const api = {
       twitter?: string;
       website?: string;
     };
-    creator_fee_wallet?: string;
+    creator_fee_wallet: string;
   }) => request('/migrations/propose', { method: 'POST', body: JSON.stringify(data) }),
 
   getMigration: (id: string) => request(`/migrations/${id}`),
