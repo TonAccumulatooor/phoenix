@@ -1,0 +1,46 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      DB_PATH: /data/phoenix.db
+      PORT: 8000
+    volumes:
+      - phoenix-data:/data
+      - phoenix-uploads:/app/uploads
+    # No published ports: only reachable from the frontend container.
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_VAULT_ADDRESS: ${VITE_VAULT_ADDRESS}
+        CACHE_BUST: "3"
+    restart: unless-stopped
+    environment:
+      PORT: 80
+      BACKEND_URL: backend:8000
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  agent:
+    build: ./phoenix-agent
+    restart: unless-stopped
+    env_file: ./phoenix-agent/.env
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      - backend
+    # The agent moves real funds. Start it explicitly:
+    #   docker compose up -d agent
+    profiles:
+      - agent
+
+volumes:
+  phoenix-data:
+  phoenix-uploads:
