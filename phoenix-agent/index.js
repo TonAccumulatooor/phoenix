@@ -397,6 +397,16 @@ function buildMetadataTool(sdk) {
  *   }
  *
  * Deploy and dev buy are a single message. See docs/topblast-v4-integration.md.
+ *
+ * !! UNVERIFIED AGAINST TOPBLAST !!
+ * Real Topblast launches reach the factory as opcode 0x632f5d1c, not 0x6ff416dc
+ * — verified on-chain against a 1% and a 3% launch on 2026-08-15. 0x632f5d1c is
+ * absent from @dedust/kit@0.0.4 (the newest published version), and its body
+ * layout is NOT DeployMemeMessage: forcing that parse leaves 640+ bits over and
+ * reports the same presetId for tokens with different fee tiers.
+ *
+ * Whether the factory still accepts 0x6ff416dc is untested. Do not deploy live
+ * until the 0x632f5d1c schema is confirmed with @sickz or the DeDust dev chat.
  */
 
 // Factory exit codes, from MemeFactory.Errors in @dedust/kit.

@@ -100,16 +100,56 @@ to forward. The topblast.lol "direct creator rewards to any TON wallet" toggle i
 therefore an application-layer feature of their platform, not a property of the
 contract. Confirm with @sickz whether they expose a way to make it trustless.
 
+## Topblast does not send DeployMemeMessage — CRITICAL
+
+Verified on-chain against two real launches (2026-08-15):
+
+| token | tradeFeeBps | factory inbound opcode |
+|---|---|---|
+| `EQAm3zO8VWQs1--V3rCjiK1DDFdt0WiY7tks7vLI7SOIoFlg` | 100 (1%) | `0x632f5d1c` |
+| `EQAmbxmcovH5pirI1ZgfCYcDzeWPxZen2eLedUmMq7Dv4luc` | 300 (3%) | `0x632f5d1c` |
+
+Both deploys reached the factory as **`0x632f5d1c`**, not `0x6ff416dc`. The factory
+then emits the documented `InitMemeMessage` (`0x796f5a0c`) to the new token, so
+everything downstream matches the SDK — only the entry message differs.
+
+`0x632f5d1c` appears nowhere in `@dedust/kit@0.0.4` (published 2026-05-19, the
+newest version). The sender is a plain `wallet_v5r1`, not a contract, so this is a
+message an ordinary user wallet sends directly to the factory — the same thing
+Phoenix needs to send.
+
+Attempting to parse the body as `DeployMemeMessage` is misleading: it parses, and
+the `uri` field even decodes to a clean `ipfs://` URL, but both tokens then report
+`presetId: 1` despite having different fee tiers, and 640+ bits are left over. The
+layout is genuinely different; do not trust a forced decode.
+
+**Consequence:** the deploy rewrite currently emits `0x6ff416dc`, which is the
+schema the SDK documents but not the one Topblast's own launches use. Whether the
+factory still accepts `0x6ff416dc` is untested. Resolve before any live deploy.
+
+Ask @sickz or the DeDust dev chat for the `0x632f5d1c` schema, or for the SDK
+version that includes it.
+
 ## Fee tiers and presetId
 
 `MemeStorage.baseFeeBps` and `GetMemeDataReply.tradeFeeBps` are `uint16` basis
-points — 100 = 1%, 300 = 3%. `presetId` is `uint4`, so up to 16 presets, each
-presumably binding a curve shape and a fee. The mapping from presetId to fee is
-NOT in the SDK.
+points. Confirmed on-chain via `get_meme_data` (note: snake_case, not
+`getMemeData`) on the two tokens above — 100 and 300, i.e. 1% and 3%.
 
-**Open question for @sickz or on-chain inspection:** which presetId corresponds to
-the 1% and 3% tiers. Get it from a real deploy transaction, or by calling
-`getMemeData` on a token known to use each tier and reading `tradeFeeBps`.
+The same call also confirms `onSellSupply = 700_000_000` on both, independently
+verifying the 70% curve-supply figure now in `config.py`.
+
+The presetId → fee mapping remains unknown, and cannot be recovered until the
+`0x632f5d1c` layout is known, since that is where a real deploy carries it.
+
+Useful fields from `get_meme_data`, in stack order:
+
+    initialized, migrated, controllerAddress, creatorAddress, creatorFee,
+    seed, isGraduated, alpha, beta, onSellSupply, tradeFeeBps,
+    raisedFunds, currentSupply
+
+`raisedFunds` and `isGraduated` let the agent track graduation from the contract
+rather than estimating it.
 
 ## Other messages of interest
 
