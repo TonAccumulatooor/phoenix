@@ -41,10 +41,17 @@ const { DeployMemeMessage, MemeMetadata } = memeFactoryGen;
 // Topblast / Uranus constants
 const MEME_FACTORY     = 'EQAmkd4Pd_xgUW4b9MLrygf0SOfR2EUVa_iCtVWGnYB2hItG';
 const BUY_OPCODE       = 0x94826557;
-// Bonding-curve preset. presetId is a uint4 selecting curve shape + fee tier;
-// the presetId → fee mapping is not published. TODO: confirm with @sickz which
-// preset is the 1% tier and which is 3% before the first live deploy.
-const PRESET_ID        = Number(process.env.TOPBLAST_PRESET_ID ?? 0);
+// Bonding-curve preset. presetId is a uint4 selecting curve shape + fee tier.
+// Recovered by differential analysis of real deploys — see
+// docs/topblast-v4-integration.md. Confirmed on six samples across two
+// independent sets; the 0.25% tier's preset is unknown (no sample).
+const PRESET_BY_FEE = {
+  0.01: 3,   // 1% trade fee → 0.35% creator rewards
+  0.03: 5,   // 3% trade fee → 1.10% creator rewards
+};
+// Phoenix defaults to the 3% tier: it pays 1.1% creator rewards versus 0.35%,
+// and those rewards are what fund the new community.
+const PRESET_ID        = Number(process.env.TOPBLAST_PRESET_ID ?? PRESET_BY_FEE[0.03]);
 // Gas added on top of the dev buy to cover deploying the meme contract and its
 // wallets. The factory refunds the excess. TODO: confirm the real figure.
 const DEPLOY_GAS_GRAM  = Number(process.env.TOPBLAST_DEPLOY_GAS_GRAM ?? 1);
@@ -400,13 +407,20 @@ function buildMetadataTool(sdk) {
  *
  * !! UNVERIFIED AGAINST TOPBLAST !!
  * Real Topblast launches reach the factory as opcode 0x632f5d1c, not 0x6ff416dc
- * — verified on-chain against a 1% and a 3% launch on 2026-08-15. 0x632f5d1c is
- * absent from @dedust/kit@0.0.4 (the newest published version), and its body
- * layout is NOT DeployMemeMessage: forcing that parse leaves 640+ bits over and
- * reports the same presetId for tokens with different fee tiers.
+ * — verified on-chain across six launches on 2026-08-15. 0x632f5d1c is absent
+ * from @dedust/kit@0.0.4 (the newest published version).
  *
+ * Differential analysis recovered its head:
+ *   bit   0..31   op = 0x632f5d1c
+ *   bit  32..95   queryId: uint64 (unix seconds)
+ *   bit  96..99   uint4 = 1 (constant)
+ *   bit 100..103  presetId: uint4 (3 = 1% fee, 5 = 3% fee)
+ *   bit 104..     opaque, identical across same-tier deploys
+ *   ref[0]        metadata URI string
+ *
+ * The opaque tail is still unmapped, so we cannot construct 0x632f5d1c yet.
  * Whether the factory still accepts 0x6ff416dc is untested. Do not deploy live
- * until the 0x632f5d1c schema is confirmed with @sickz or the DeDust dev chat.
+ * until one or the other is confirmed with @sickz or the DeDust dev chat.
  */
 
 // Factory exit codes, from MemeFactory.Errors in @dedust/kit.

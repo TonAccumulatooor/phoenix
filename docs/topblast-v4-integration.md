@@ -162,8 +162,40 @@ variation there is nothing to diff, and speculative parses produce nonsense (an
 "address then coins" reading yields 56,031 GRAM). Do not guess at this layout — an
 earlier forced parse as `DeployMemeMessage` looked plausible and was wrong.
 
-**A single 3% deploy would settle it.** Diffing a 1% body against a 3% body isolates
-the fee/preset field immediately. Every launch currently in the channel is 1%.
+### presetId → fee tier: SOLVED
+
+A 3% deploy (`EQAmSsnOG8aeXINlYzWUilNKSef1_WRg3il4P9qXR1JQgl2q`, 2026-08-15
+18:13 UTC, `tradeFeeBps = 300`) supplied the missing variation.
+
+Diffed against the 1% bodies, **byte 12 is the only early byte that changes**, and
+everything from bit 104 onward is identical:
+
+| | byte 12 | binary | uint4 @ bit 100 |
+|---|---|---|---|
+| 1% (`tradeFeeBps=100`) | `0x13` | `00010011` | **3** |
+| 3% (`tradeFeeBps=300`) | `0x15` | `00010101` | **5** |
+
+Only bits 101 and 102 differ. Reading a `uint4` at bit offset 100 gives 3 and 5 —
+consistent with `presetId` being a `uint4` in the documented schema, preceded here
+by one extra 4-bit field (constant `1` in every sample).
+
+    presetId 3  ->  1% trade fee  ->  0.35% creator rewards
+    presetId 5  ->  3% trade fee  ->  1.10% creator rewards
+
+**Validated on six samples across two independent sets**: the four channel launches
+used for the diff, plus the two original reference tokens (different deployers,
+different days, not part of the diff). No exceptions.
+
+The 0.25% tier presumably has its own presetId; no sample was available.
+
+Layout so far, with the rest of the root cell still opaque:
+
+    bit   0..31   op = 0x632f5d1c
+    bit  32..95   queryId: uint64   (unix timestamp, seconds)
+    bit  96..99   uint4 = 1         (constant across all samples)
+    bit 100..103  presetId: uint4   (3 = 1% fee, 5 = 3% fee)
+    bit 104..     opaque; identical across same-tier deploys
+    ref[0]        metadata URI as a string
 
 Reference body (PEPEBLAST, root cell hex, 784 bits):
 
