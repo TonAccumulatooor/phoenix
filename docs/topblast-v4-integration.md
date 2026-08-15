@@ -130,6 +130,47 @@ factory still accepts `0x6ff416dc` is untested. Resolve before any live deploy.
 Ask @sickz or the DeDust dev chat for the `0x632f5d1c` schema, or for the SDK
 version that includes it.
 
+### What differential analysis established
+
+Four launches from t.me/topblastdotlol, all after the 2026-08-13 Topblast update,
+all confirmed 1% on-chain (`tradeFeeBps = 100`):
+
+| token | address | deploy time (UTC) |
+|---|---|---|
+| PEPEBLAST | `EQAmas2beMficsf82IqTJbP7BBmtPEZAedppnYw53p2jfWIR` | 2026-08-15 17:04:17 |
+| PEPEBL | `EQAm-QWFPnBdlTpxr6U2aCvPONWOI_3XR-X3FCvgMt9mr-_d` | 2026-08-15 16:41:35 |
+| NICEGRAM | `EQAmVNGurwKt4rFZy6BsowsEvh4kYOf4Q2bqLolT8e3EunCl` | 2026-08-15 16:05:31 |
+| DECAT | `EQAmBohkkCmQoylf64FKR8pQeUKa5EhMOT3ZD9NIdbiCb3sZ` | 2026-08-15 15:57:35 |
+
+Every body is **784 bits in the root cell plus one 640-bit ref**. Diffing the four:
+
+- **Only bytes 10–12 differ.** They are the low half of a `uint64` at bit offset
+  32, i.e. `queryId`, carrying a **unix timestamp in seconds** — matched each
+  transaction's own time to within 1s across all four.
+- **Everything else in the root is byte-identical**, across four tokens with
+  different names, tickers and metadata.
+- **The ref holds the metadata URI**, e.g.
+  `https://jorhmeta.duckdns.org/ipfs/QmQo89d8dyR4DRotisVBWKPmWwAHSG7yRmZaURi7KYVQZt`
+
+So the root cell is effectively a fixed template — identical curve parameters, fee
+tier and configuration on every launch — with only the timestamp and metadata ref
+varying. For Phoenix that is encouraging: a deploy is a constant blob plus a URI,
+not a bespoke per-token construction.
+
+**The field boundaries inside the constant region could not be recovered.** With no
+variation there is nothing to diff, and speculative parses produce nonsense (an
+"address then coins" reading yields 56,031 GRAM). Do not guess at this layout — an
+earlier forced parse as `DeployMemeMessage` looked plausible and was wrong.
+
+**A single 3% deploy would settle it.** Diffing a 1% body against a 3% body isolates
+the fee/preset field immediately. Every launch currently in the channel is 1%.
+
+Reference body (PEPEBLAST, root cell hex, 784 bits):
+
+    632F5D1C000000006A809C10136015D3EF7980046801DDC01127FFE4957549E8
+    CCF1BDA2342E42061EE47C5C40CC3333DBA857108B282EE01F400007000196402
+    64E21564D7044945A1BA58F64D5689E306DDE9BBEF945ED85DAA288CAD0EE6B2800
+
 ## Fee tiers and presetId
 
 `MemeStorage.baseFeeBps` and `GetMemeDataReply.tradeFeeBps` are `uint16` basis
