@@ -4,22 +4,24 @@
  * Handles the on-chain execution layer of token migrations:
  * - Selling deposited OLDMEME into LP for TON extraction
  * - Building + hosting TEP-64 metadata JSON
- * - Launching NEWMEME on Groypad with extracted TON
+ * - Launching NEWMEME on Topblast with extracted GRAM
  * - Discovering the new token address from the deploy TX
  * - Distributing NEWMEME to depositors
  * - Creating PHX/NEWMEME LP on DeDust
  *
  * Every step reports back to the Phoenix backend so the DB stays in sync.
  *
- * Groypad integration notes (reverse-engineered from on-chain):
- *   - MemeFactory: UQClgkR0eLgWAR0tZh8YbQyDqa-Jn5wUP1XHPLDB6RmAPySF
- *   - Deploy opcode: 0x6ff416dc → MemeFactory (deploy + dev buy in one TX)
- *   - Deploy cell:   op(32) + qid(64) + flag:uint4(=4) + forward_amount:Coins + pad:uint2(=0) + ref[url_bytes]
- *   - Buy opcode:  0x742b36d8 → Meme (jetton master)
- *   - Factory fee:   0.5 TON flat (deducted from message value before bonding curve buy)
- *   - Graduation:  1,050 TON raised
- *   - Bonding curve: Virtual AMM (constant product) — NOT linear as docs simplify
- *   - Virtual reserves: alpha = virtual TON reserve, beta = virtual token reserve
+ * Topblast runs on DeDust's Uranus contracts. Message encoding comes from
+ * @dedust/kit — generated bindings for the deployed contracts — rather than
+ * from hand-built cells. See docs/topblast-v4-integration.md.
+ *
+ *   - MemeFactory v4: EQAmkd4Pd_xgUW4b9MLrygf0SOfR2EUVa_iCtVWGnYB2hItG
+ *   - Deploy:      0x6ff416dc → MemeFactory (deploy + dev buy in one TX)
+ *   - Buy:         0x94826557 → Meme (jetton master)
+ *   - Sell:        0x646ad424 → Meme
+ *   - Claim fees:  0xad7269a8 → Meme, pays out to an arbitrary `to` address
+ *   - Graduation:  1,500 GRAM raised on the curve, + 50 GRAM migration fee
+ *   - Curve supply: 70% of total supply is sold on the curve
  */
 
 import {
@@ -31,19 +33,28 @@ import {
   ReadinessStatus,
 } from '@dedust/sdk';
 import { Address, toNano, TonClient4, beginCell } from '@ton/ton';
+// @dedust/kit is CommonJS with no exports map, so reach the generated module
+// directly and destructure. The root entry point exports nothing.
+import memeFactoryGen from '@dedust/kit/dist/uranus/MemeFactory.gen.js';
+const { DeployMemeMessage, MemeMetadata } = memeFactoryGen;
 
-// Groypad constants
-const MEME_FACTORY     = 'UQClgkR0eLgWAR0tZh8YbQyDqa-Jn5wUP1XHPLDB6RmAPySF';
-const DEPLOY_OPCODE    = 0x6ff416dc;
-const BUY_OPCODE       = 0x742b36d8;
-const DEPLOY_FLAG      = 4;
-const FACTORY_FEE_TON  = 0.5;
-const GRADUATION_TON   = 1050n * BigInt(1e9);
+// Topblast / Uranus constants
+const MEME_FACTORY     = 'EQAmkd4Pd_xgUW4b9MLrygf0SOfR2EUVa_iCtVWGnYB2hItG';
+const BUY_OPCODE       = 0x94826557;
+// Bonding-curve preset. presetId is a uint4 selecting curve shape + fee tier;
+// the presetId → fee mapping is not published. TODO: confirm with @sickz which
+// preset is the 1% tier and which is 3% before the first live deploy.
+const PRESET_ID        = Number(process.env.TOPBLAST_PRESET_ID ?? 0);
+// Gas added on top of the dev buy to cover deploying the meme contract and its
+// wallets. The factory refunds the excess. TODO: confirm the real figure.
+const DEPLOY_GAS_GRAM  = Number(process.env.TOPBLAST_DEPLOY_GAS_GRAM ?? 1);
+const GRADUATION_GRAM  = 1500n * BigInt(1e9);
 const TRADE_FEE_BPS    = 300;
 const PRECISION        = BigInt(1e9);
 const TONCENTER_V3     = 'https://toncenter.com/api/v3';
 const TONAPI_V2        = 'https://tonapi.io/v2';
 const BUY_GAS_TON      = 0.3;
+const CLAIM_GAS_GRAM   = 0.1;   // gas for ClaimCreatorFeeMessage; excess refunded
 
 // ── Backend helper ────────────────────────────────────────────────────────────
 
@@ -171,11 +182,11 @@ export function tools(sdk) {
   return [
     sellOldTokenTool(sdk),
     buildMetadataTool(sdk),
-    phoenixDeployOnGroypadTool(sdk),
+    phoenixDeployOnTopblastTool(sdk),
     discoverTokenAddressTool(sdk),
-    groypadTokenInfoTool(sdk),
-    groypadGetQuoteTool(sdk),
-    phoenixBuyOnGroypadTool(sdk),
+    topblastTokenInfoTool(sdk),
+    topblastGetQuoteTool(sdk),
+    phoenixBuyOnTopblastTool(sdk),
     distributeNewTokenTool(sdk),
     claimCreatorFeesTool(sdk),
     nftAirdropTool(sdk),
@@ -281,7 +292,7 @@ function sellOldTokenTool(sdk) {
         // Report extraction to backend — transitions status to 'launching'
         const report = await backendPost(backend_url, `/api/migrations/${migration_id}/extracted-ton`, {
           extracted_ton: tonReceived,
-          dev_buy_ton: tonReceived,
+          dev_buy_gram: tonReceived,
         }, agent_key);
         sdk.log.info(`Backend updated: extracted_ton=${tonReceived}, status=${report.status}`);
 
@@ -307,7 +318,7 @@ function buildMetadataTool(sdk) {
     name: 'phoenix_build_metadata',
     description:
       'Build a TEP-64 metadata JSON from the migration\'s stored metadata and host it on the backend. ' +
-      'Returns a metadata_url to pass to phoenix_deploy_on_groypad. ' +
+      'Returns a metadata_url to pass to phoenix_deploy_on_topblast. ' +
       'If the migration already has metadata stored from the proposal form, call with just the migration_id.',
     parameters: {
       type: 'object',
@@ -348,7 +359,7 @@ function buildMetadataTool(sdk) {
           agent_key,
         );
 
-        // The URL is relative (/api/uploads/...) — make absolute for Groypad
+        // The URL is relative (/api/uploads/...) — make absolute for Topblast
         const metadataUrl = `${backend_url}${result.metadata_url}`;
 
         sdk.log.info(`Metadata built: ${metadataUrl}`);
@@ -366,96 +377,122 @@ function buildMetadataTool(sdk) {
   };
 }
 
-// ── 3. Deploy on Groypad ──────────────────────────────────────────────────────
+// ── 3. Deploy on Topblast ─────────────────────────────────────────────────────
 
 /**
- * GROYPAD INTEGRATION — FULLY PROGRAMMATIC
+ * TOPBLAST / URANUS v4 INTEGRATION
  *
- * Deploy opcode 0x6ff416dc was reverse-engineered from on-chain MemeFactory transactions.
- * Deploy + dev buy happen in a SINGLE transaction to the MemeFactory contract.
+ * The deploy message is encoded by @dedust/kit, which ships generated bindings
+ * for the deployed contracts. Do NOT hand-build this cell: the previous version
+ * did, and got the field order wrong (metadata ref belongs BEFORE initialBuy)
+ * and mistook the two trailing nullable flags for a 2-bit pad.
  *
- * Deploy message layout (TL-B):
- *   op:uint32 (0x6ff416dc) + query_id:uint64 + flag:uint4 (=4) +
- *   forward_amount:Coins + pad:uint2 (=0) + ref[content_url_bytes]
+ *   struct (0x6ff416dc) DeployMemeMessage {
+ *       queryId: uint64
+ *       presetId: uint4              // selects curve + fee tier
+ *       metadata: MemeMetadata       // { uri: string }
+ *       initialBuy: coins            // the dev buy
+ *       partnerConfig: PartnerConfig?
+ *       referrerConfig: ReferrerConfig?
+ *   }
  *
- * The message value = dev_buy_ton (the total TON to spend).
- * Factory deducts a flat 0.5 TON fee, forwards the rest to the bonding curve buy.
- * Content ref = raw URL bytes (factory wraps in TEP-64 0x01 prefix internally).
+ * Deploy and dev buy are a single message. See docs/topblast-v4-integration.md.
  */
 
-function phoenixDeployOnGroypadTool(sdk) {
+// Factory exit codes, from MemeFactory.Errors in @dedust/kit.
+const FACTORY_ERRORS = {
+  20: 'Bonding curve parameters malformed',
+  21: 'Slippage exceeded',
+  22: 'Preset does not exist — check TOPBLAST_PRESET_ID',
+  23: 'Message value too low for the requested initial buy',
+  26: 'Initial buy limit exceeded — the dev buy is above the per-deploy cap',
+  65535: 'Unknown operation — wrong opcode or malformed body',
+};
+
+function phoenixDeployOnTopblastTool(sdk) {
   return {
-    name: 'phoenix_deploy_on_groypad',
+    name: 'phoenix_deploy_on_topblast',
     description:
-      'Deploy a new token on Groypad and execute the dev buy in a single on-chain transaction. ' +
-      'Sends TON to the MemeFactory contract (opcode 0x6ff416dc). The factory deploys the meme contract, ' +
-      'deducts a flat 0.5 TON fee, and forwards the rest as the initial bonding curve buy. ' +
-      'IMPORTANT: Call phoenix_build_metadata first to get the metadata_url.',
+      'Deploy a new token on Topblast and execute the dev buy in a single on-chain transaction. ' +
+      'Sends GRAM to the Uranus MemeFactory (opcode 0x6ff416dc) with the deploy message encoded ' +
+      'by @dedust/kit. IMPORTANT: Call phoenix_build_metadata first to get the metadata_url.',
     parameters: {
       type: 'object',
       properties: {
         name:         { type: 'string', description: 'New token name' },
         symbol:       { type: 'string', description: 'New token ticker symbol' },
-        dev_buy_ton:  {
+        dev_buy_gram: {
           type: 'number',
-          description: 'Total TON to spend (0.5 TON factory fee deducted automatically). 1050 TON = full graduation.',
+          description:
+            'GRAM to spend on the initial bonding-curve buy. ~1500 GRAM (post-fee) fills the ' +
+            'curve and graduates the token; gas is added on top of this amount.',
         },
         metadata_url: {
           type: 'string',
           description: 'TEP-64 metadata JSON URL from phoenix_build_metadata.',
         },
+        preset_id: {
+          type: 'number',
+          description:
+            'Bonding curve preset, selects the trade fee tier. Defaults to TOPBLAST_PRESET_ID.',
+        },
       },
-      required: ['name', 'symbol', 'dev_buy_ton', 'metadata_url'],
+      required: ['name', 'symbol', 'dev_buy_gram', 'metadata_url'],
     },
-    execute: async ({ name, symbol, dev_buy_ton, metadata_url }) => {
-      sdk.log.info(`Deploying ${symbol} on Groypad | ${dev_buy_ton} TON dev buy | metadata: ${metadata_url}`);
+    execute: async ({ name, symbol, dev_buy_gram, metadata_url, preset_id }) => {
+      const presetId = preset_id ?? PRESET_ID;
+      sdk.log.info(
+        `Deploying ${symbol} on Topblast | ${dev_buy_gram} GRAM dev buy | preset ${presetId} | ${metadata_url}`,
+      );
 
-      if (dev_buy_ton < 1) {
-        return { success: false, error: 'Dev buy must be at least 1 TON (0.5 TON factory fee + 0.5 TON minimum buy).' };
+      if (!(dev_buy_gram > 0)) {
+        return { success: false, error: 'Dev buy must be greater than zero.' };
       }
 
       try {
-        const forwardAmountNano = BigInt(Math.floor((dev_buy_ton - FACTORY_FEE_TON) * 1e9));
+        const initialBuy = BigInt(Math.floor(dev_buy_gram * 1e9));
 
-        const contentCell = beginCell()
-          .storeBuffer(Buffer.from(metadata_url))
-          .endCell();
+        const body = DeployMemeMessage.toCell(
+          DeployMemeMessage.create({
+            queryId: BigInt(Date.now()),
+            presetId: BigInt(presetId),
+            metadata: MemeMetadata.create({ uri: metadata_url }),
+            initialBuy,
+            partnerConfig: null,
+            referrerConfig: null,
+          }),
+        );
 
-        const body = beginCell()
-          .storeUint(DEPLOY_OPCODE, 32)
-          .storeUint(0, 64)
-          .storeUint(DEPLOY_FLAG, 4)
-          .storeCoins(forwardAmountNano)
-          .storeUint(0, 2)
-          .storeRef(contentCell)
-          .endCell();
+        // The message must carry the dev buy plus gas for deploying the meme
+        // contract and its wallets; the factory refunds any excess.
+        const msgValueGram = dev_buy_gram + DEPLOY_GAS_GRAM;
 
         const txResult = await sdk.ton.sendTON(
           MEME_FACTORY,
-          dev_buy_ton,
+          msgValueGram,
           body.toBoc().toString('base64'),
         );
 
-        const netBuy = dev_buy_ton - FACTORY_FEE_TON;
-        const graduatesPct = Math.min(100, (netBuy / 1050) * 100);
-
-        sdk.log.info(`Deploy TX sent: ${txResult?.txRef} | net buy: ${netBuy} TON | grad: ${graduatesPct.toFixed(1)}%`);
+        sdk.log.info(`Deploy TX sent: ${txResult?.txRef} | msg value: ${msgValueGram} GRAM`);
 
         return {
           success: true,
           tx_ref: txResult?.txRef,
           factory: MEME_FACTORY,
-          dev_buy_ton,
-          factory_fee_ton: FACTORY_FEE_TON,
-          net_buy_ton: netBuy,
-          graduation_progress_pct: graduatesPct.toFixed(2),
-          graduates: graduatesPct >= 100,
+          preset_id: presetId,
+          dev_buy_gram,
+          deploy_gas_gram: DEPLOY_GAS_GRAM,
+          msg_value_gram: msgValueGram,
           metadata_url,
           note: 'Use phoenix_discover_token_address with the tx_ref to find the new meme contract address.',
         };
       } catch (error) {
-        sdk.log.error(`Deploy failed: ${error.message}`);
-        return { success: false, error: error.message };
+        // Surface factory exit codes as something diagnosable.
+        const exitCode = error?.exitCode ?? error?.code;
+        const known = FACTORY_ERRORS[exitCode];
+        const detail = known ? `${known} (exit ${exitCode})` : error.message;
+        sdk.log.error(`Deploy failed: ${detail}`);
+        return { success: false, error: detail, exit_code: exitCode };
       }
     },
   };
@@ -467,21 +504,21 @@ function discoverTokenAddressTool(sdk) {
   return {
     name: 'phoenix_discover_token_address',
     description:
-      'After deploying on Groypad, discover the new meme contract address by tracing the deploy transaction. ' +
+      'After deploying on Topblast, discover the new meme contract address by tracing the deploy transaction. ' +
       'Queries TonAPI for the transaction trace and finds the newly created contract. ' +
       'Also reports the deployment back to the Phoenix backend.',
     parameters: {
       type: 'object',
       properties: {
-        tx_ref: { type: 'string', description: 'Transaction reference/hash from phoenix_deploy_on_groypad' },
+        tx_ref: { type: 'string', description: 'Transaction reference/hash from phoenix_deploy_on_topblast' },
         migration_id: { type: 'string', description: 'Migration ID to report the new address to' },
-        dev_buy_ton: { type: 'number', description: 'TON spent on dev buy (for backend reporting)' },
+        dev_buy_gram: { type: 'number', description: 'TON spent on dev buy (for backend reporting)' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
         agent_key: { type: 'string', description: 'API key for agent endpoints' },
       },
       required: ['tx_ref', 'migration_id'],
     },
-    execute: async ({ tx_ref, migration_id, dev_buy_ton, backend_url = 'http://localhost:8000', agent_key = '' }) => {
+    execute: async ({ tx_ref, migration_id, dev_buy_gram, backend_url = 'http://localhost:8000', agent_key = '' }) => {
       const apiKey = sdk.secrets?.get?.('TON_API_KEY');
       sdk.log.info(`Discovering new token address from TX: ${tx_ref}`);
 
@@ -573,7 +610,7 @@ function discoverTokenAddressTool(sdk) {
         const report = await backendPost(backend_url, `/api/migrations/${migration_id}/deployed-token`, {
           new_token_address: newTokenAddress,
           agent_supply: agentSupply,
-          dev_buy_ton: dev_buy_ton || undefined,
+          dev_buy_gram: dev_buy_gram || undefined,
         }, agent_key);
         sdk.log.info(`Backend updated: new_token=${newTokenAddress}, status=${report.status}`);
 
@@ -592,17 +629,17 @@ function discoverTokenAddressTool(sdk) {
   };
 }
 
-// ── 5. Groypad token info ───────────���─────────────────────────────────────────
+// ── 5. Topblast token info ───────────���─────────────────────────────────────────
 
-function groypadTokenInfoTool(sdk) {
+function topblastTokenInfoTool(sdk) {
   return {
-    name: 'groypad_token_info',
+    name: 'topblast_token_info',
     description:
-      'Get on-chain bonding curve state for a Groypad token: price, progress toward graduation, raised funds, supply.',
+      'Get on-chain bonding curve state for a Topblast token: price, progress toward graduation, raised funds, supply.',
     parameters: {
       type: 'object',
       properties: {
-        meme_address: { type: 'string', description: 'Groypad Meme contract address (jetton master)' },
+        meme_address: { type: 'string', description: 'Topblast Meme contract address (jetton master)' },
       },
       required: ['meme_address'],
     },
@@ -611,7 +648,7 @@ function groypadTokenInfoTool(sdk) {
       try {
         const data = await getMemeData(meme_address, apiKey);
         const price = Number(data.alpha + (data.beta * data.currentSupply) / PRECISION) / 1e9;
-        const progressPct = Math.min(100, Number((data.raisedFunds * 10000n) / GRADUATION_TON) / 100);
+        const progressPct = Math.min(100, Number((data.raisedFunds * 10000n) / GRADUATION_GRAM) / 100);
         return {
           success: true,
           meme_address,
@@ -631,16 +668,16 @@ function groypadTokenInfoTool(sdk) {
   };
 }
 
-// ── 6. Groypad buy quote ─────────────��───────────────────────���────────────────
+// ── 6. Topblast buy quote ─────────────��───────────────────────���────────────────
 
-function groypadGetQuoteTool(sdk) {
+function topblastGetQuoteTool(sdk) {
   return {
-    name: 'groypad_get_quote',
-    description: 'Preview how many tokens a given TON amount will buy on Groypad (no transaction sent).',
+    name: 'topblast_get_quote',
+    description: 'Preview how many tokens a given TON amount will buy on Topblast (no transaction sent).',
     parameters: {
       type: 'object',
       properties: {
-        meme_address: { type: 'string', description: 'Groypad Meme contract address' },
+        meme_address: { type: 'string', description: 'Topblast Meme contract address' },
         amount_ton: { type: 'number', description: 'TON to spend (excluding 0.3 TON gas)' },
         slippage: { type: 'number', description: 'Slippage % for min_tokens_out calculation (default 5)' },
       },
@@ -676,19 +713,19 @@ function groypadGetQuoteTool(sdk) {
   };
 }
 
-// ── 7. Buy on Groypad (additional buys after deploy) ──────────────────────────
+// ── 7. Buy on Topblast (additional buys after deploy) ──────────────────────────
 
-function phoenixBuyOnGroypadTool(sdk) {
+function phoenixBuyOnTopblastTool(sdk) {
   return {
-    name: 'phoenix_buy_on_groypad',
+    name: 'phoenix_buy_on_topblast',
     description:
-      'Execute a buy on an already-deployed Groypad token. ' +
+      'Execute a buy on an already-deployed Topblast token. ' +
       'Sends TON to the Meme contract with opcode 0x742b36d8. ' +
       'Used for additional buys after the initial deploy, or for community top-up buys.',
     parameters: {
       type: 'object',
       properties: {
-        meme_address: { type: 'string', description: 'Groypad Meme contract address (jetton master)' },
+        meme_address: { type: 'string', description: 'Topblast Meme contract address (jetton master)' },
         amount_ton: { type: 'number', description: 'TON to spend on the buy. 0.3 TON gas added automatically.' },
         slippage: { type: 'number', description: 'Slippage % for min_tokens_out (default 5)' },
       },
@@ -719,7 +756,7 @@ function phoenixBuyOnGroypadTool(sdk) {
 
         const txResult = await sdk.ton.sendTON(meme_address, totalValue, body.toBoc().toString('base64'));
 
-        const progressAfter = Math.min(100, Number(((data.raisedFunds + amountNano) * 10000n) / GRADUATION_TON) / 100);
+        const progressAfter = Math.min(100, Number(((data.raisedFunds + amountNano) * 10000n) / GRADUATION_GRAM) / 100);
 
         sdk.log.info(`Buy tx sent: ${txResult?.txRef}`);
 
@@ -860,23 +897,44 @@ function distributeNewTokenTool(sdk) {
   };
 }
 
-// ── 8b. Claim creator fees via GroypFi bot ───────────────────────────────────
+// ── 8b. Claim creator fees on-chain ──────────────────────────────────────────
 
-const FEECLAIM_BOT = 'feeclaim_bot';
+/**
+ * Uranus binds `creatorAddress` to whoever sent the deploy message — the agent
+ * wallet — and exposes no way to reassign it. So the community wallet cannot be
+ * made the on-chain creator.
+ *
+ * What it does expose is a payout target:
+ *
+ *   struct (0xad7269a8) ClaimCreatorFeeMessage {
+ *       queryId: uint64
+ *       to: address?          // fees are paid out here
+ *       excessesTo: address?
+ *   }
+ *
+ * So the agent claims directly to the community wallet. Funds never rest in the
+ * agent wallet, but this is still weaker than the 51% mechanic: it holds because
+ * the agent keeps choosing to pass `to`, not because the contract enforces it.
+ *
+ * This replaces an earlier flow that drove a Telegram bot (@feeclaim_bot) with
+ * chat messages and no confirmation that anything happened.
+ */
+
+const CLAIM_CREATOR_FEE_OPCODE = 0xad7269a8;
 
 function claimCreatorFeesTool(sdk) {
   return {
     name: 'phoenix_claim_creator_fees',
     description:
-      'Transfer Groypad creator fees to the community wallet by sending a /claim command to the GroypFi fee claim bot on Telegram. ' +
-      'Requires the launcher wallet address (Agent wallet), token ticker, and new contract address. ' +
-      'The bot will reassign creator fee earnings to the specified community wallet.',
+      'Claim Topblast creator fees directly to the community wallet with an on-chain ' +
+      'ClaimCreatorFeeMessage (0xad7269a8) sent to the meme contract. The `to` field routes ' +
+      'the payout to the community wallet, so fees do not pass through the agent wallet.',
     parameters: {
       type: 'object',
       properties: {
         creator_fee_wallet: { type: 'string', description: 'Community wallet that should receive creator fees' },
         ticker: { type: 'string', description: 'Token ticker/symbol (e.g. PHX)' },
-        new_token_address: { type: 'string', description: 'Deployed Groypad meme contract address' },
+        new_token_address: { type: 'string', description: 'Deployed Topblast meme contract address' },
         migration_id: { type: 'string', description: 'Migration ID (for backend reporting)' },
         backend_url: { type: 'string', default: 'http://localhost:8000' },
         agent_key: { type: 'string', description: 'API key for agent endpoints' },
@@ -887,20 +945,19 @@ function claimCreatorFeesTool(sdk) {
       sdk.log.info(`Claiming creator fees → ${creator_fee_wallet} for ${ticker} (${new_token_address})`);
 
       try {
-        // Send /claim command to the GroypFi fee claim bot
-        // Format: /claim then on next prompt: WALLET_ADDRESS TICKER CONTRACT_ADDRESS
-        const claimMessage = `${creator_fee_wallet} ${ticker} ${new_token_address}`;
+        const claimBody = beginCell()
+          .storeUint(CLAIM_CREATOR_FEE_OPCODE, 32)
+          .storeUint(BigInt(Date.now()), 64)
+          .storeAddress(Address.parse(creator_fee_wallet))  // to
+          .storeAddress(null)                                // excessesTo → sender
+          .endCell();
 
-        // First send /claim to initiate the flow
-        await sdk.telegram.sendMessage(FEECLAIM_BOT, '/claim');
-        sdk.log.info('Sent /claim to @feeclaim_bot');
-
-        // Wait for the bot to respond with its prompt
-        await new Promise(r => setTimeout(r, 3000));
-
-        // Send the claim details
-        await sdk.telegram.sendMessage(FEECLAIM_BOT, claimMessage);
-        sdk.log.info(`Sent claim details: ${claimMessage}`);
+        const claimTx = await sdk.ton.sendTON(
+          new_token_address,
+          CLAIM_GAS_GRAM,
+          claimBody.toBoc().toString('base64'),
+        );
+        sdk.log.info(`Creator fee claim sent: ${claimTx?.txRef} → ${creator_fee_wallet}`);
 
         // Update backend with the creator fee wallet
         if (migration_id) {
@@ -916,24 +973,15 @@ function claimCreatorFeesTool(sdk) {
 
         return {
           success: true,
+          tx_ref: claimTx?.txRef,
           creator_fee_wallet,
           ticker,
           new_token_address,
-          bot: `@${FEECLAIM_BOT}`,
-          note: 'Fee claim submitted to GroypFi bot. Creator fees will be redirected to the community wallet.',
+          note: 'Creator fees claimed on-chain, paid out directly to the community wallet.',
         };
       } catch (error) {
         sdk.log.error(`Fee claim failed: ${error.message}`);
-        return {
-          success: false,
-          error: error.message,
-          manual_claim: {
-            bot: `@${FEECLAIM_BOT}`,
-            command: '/claim',
-            details: `${creator_fee_wallet} ${ticker} ${new_token_address}`,
-            note: 'Automatic claim failed. Submit this manually to the bot.',
-          },
-        };
+        return { success: false, error: error.message };
       }
     },
   };
@@ -1226,7 +1274,7 @@ function executeMigrationTool(sdk) {
     name: 'phoenix_execute_migration',
     description:
       'Execute the FULL migration pipeline end-to-end. This is the main orchestrator that: ' +
-      '1) Sells OLDMEME on DEX for TON, 2) Builds metadata, 3) Deploys NEWMEME on Groypad, ' +
+      '1) Sells OLDMEME on DEX for TON, 2) Builds metadata, 3) Deploys NEWMEME on Topblast, ' +
       '4) Discovers the new token address, 5) Distributes NEWMEME to depositors, ' +
       '6) Creates PHX/NEWTOKEN LP on DeDust (0.5% of supply, PHX amount auto-matched by USD value). ' +
       '7) Airdrops 0.5% of supply to Groyper NFT holders (18,450 tokens per NFT). ' +
@@ -1295,33 +1343,41 @@ function executeMigrationTool(sdk) {
 
         steps.push({ step: 'build_metadata', status: 'complete', metadata_url: metaResult.metadata_url });
 
-        // ── Step 4: Deploy on Groypad ─────────────────────────────────────
-        // Use wallet TON balance minus 5 TON buffer for gas/future ops
-        const TON_BUFFER = 5;
-        const walletTon = await sdk.ton.getTonBalance();
-        const devBuyTon = Math.floor((walletTon - TON_BUFFER) * 100) / 100; // truncate to 2dp
-        sdk.log.info(`Wallet has ${walletTon.toFixed(2)} TON, reserving ${TON_BUFFER} TON buffer, using ${devBuyTon} TON for dev buy`);
+        // ── Step 4: Deploy on Topblast ─────────────────────────────────────
+        // The deploy message carries the dev buy PLUS deploy gas, so the dev buy
+        // must leave room for both that and the operating buffer.
+        const GRAM_BUFFER = 5;
+        const walletGram = await sdk.ton.getTonBalance();
+        const devBuyGram = Math.floor((walletGram - GRAM_BUFFER - DEPLOY_GAS_GRAM) * 100) / 100;
+        sdk.log.info(
+          `Wallet has ${walletGram.toFixed(2)} GRAM, reserving ${GRAM_BUFFER} buffer + ` +
+          `${DEPLOY_GAS_GRAM} deploy gas, using ${devBuyGram} GRAM for the dev buy`,
+        );
 
-        if (devBuyTon < 1) {
-          return fail('deploy_on_groypad', `Not enough TON for dev buy. Wallet: ${walletTon.toFixed(2)}, need at least ${TON_BUFFER + 1} TON`);
+        if (devBuyGram < 1) {
+          return fail(
+            'deploy_on_topblast',
+            `Not enough GRAM for dev buy. Wallet: ${walletGram.toFixed(2)}, ` +
+            `need at least ${GRAM_BUFFER + DEPLOY_GAS_GRAM + 1} GRAM`,
+          );
         }
 
         const newTokenName = migration.new_token?.name || `${migration.old_token.name} Reborn`;
         const newTokenSymbol = migration.new_token?.symbol || migration.old_token.symbol;
 
-        sdk.log.info(`Step 4: Deploying ${newTokenSymbol} on Groypad with ${devBuyTon} TON...`);
-        const deployTool = tools(sdk).find(t => t.name === 'phoenix_deploy_on_groypad');
+        sdk.log.info(`Step 4: Deploying ${newTokenSymbol} on Topblast with ${devBuyGram} GRAM...`);
+        const deployTool = tools(sdk).find(t => t.name === 'phoenix_deploy_on_topblast');
         const deployResult = await deployTool.execute({
           name: newTokenName,
           symbol: newTokenSymbol,
-          dev_buy_ton: devBuyTon,
+          dev_buy_gram: devBuyGram,
           metadata_url: metaResult.metadata_url,
         });
 
-        if (!deployResult.success) return fail('deploy_on_groypad', deployResult.error);
+        if (!deployResult.success) return fail('deploy_on_topblast', deployResult.error);
 
         steps.push({
-          step: 'deploy_on_groypad',
+          step: 'deploy_on_topblast',
           status: 'complete',
           tx_ref: deployResult.tx_ref,
           graduates: deployResult.graduates,
@@ -1333,7 +1389,7 @@ function executeMigrationTool(sdk) {
         const discoverResult = await discoverTool.execute({
           tx_ref: deployResult.tx_ref,
           migration_id,
-          dev_buy_ton: devBuyTon,
+          dev_buy_gram: devBuyGram,
           backend_url,
           agent_key,
         });
@@ -1345,7 +1401,7 @@ function executeMigrationTool(sdk) {
           const retry = await discoverTool.execute({
             tx_ref: deployResult.tx_ref,
             migration_id,
-            dev_buy_ton: devBuyTon,
+            dev_buy_gram: devBuyGram,
             backend_url,
             agent_key,
           });
@@ -1495,7 +1551,7 @@ function executeMigrationTool(sdk) {
           success: true,
           migration_id,
           new_token_address: newTokenAddress,
-          ton_extracted: devBuyTon,
+          ton_extracted: devBuyGram,
           agent_supply: discoverResult.agent_supply,
           distributions_sent: distResult.sent,
           nft_airdrop_sent: airdropResult.success ? airdropResult.sent : 0,

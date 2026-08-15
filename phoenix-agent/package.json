@@ -5,6 +5,7 @@
   "type": "module",
   "main": "index.js",
   "dependencies": {
+    "@dedust/kit": "^0.0.4",
     "@dedust/sdk": "^0.8.7",
     "@ston-fi/sdk": "^2.7.0",
     "@ton/crypto": "^3.3.0",
